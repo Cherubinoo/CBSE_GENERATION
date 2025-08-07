@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="hero-section text-center py-5">
+    <h1 class="display-3 mb-4 animate-on-load">SmartEdu AI Platform</h1>
+    <p class="lead mb-5 animate-on-load">Transforming Education with Artificial Intelligence</p>
+    
+    <div class="mode-selector">
+        <div class="card admin-card animate-on-load">
+            <div class="card-body">
+                <h3>Admin Mode</h3>
+                <a href="/admin_login" class="btn btn-primary btn-lg mt-3">Enter</a>
+            </div>
+        </div>
+        
+        <div class="card user-card animate-on-load">
+            <div class="card-body">
+                <h3>User Mode</h3>
+                <a href="#" class="btn btn-success btn-lg mt-3">Enter</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

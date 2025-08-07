@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card shadow-lg animate-on-load">
+            <div class="card-header bg-primary text-white">
+                <h2 class="text-center"><i class="fas fa-upload me-2"></i>Upload Educational Content</h2>
+            </div>
+            <div class="card-body">
+                <form id="uploadForm" method="POST" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Class</label>
+                        <select class="form-select class-select" name="class" id="classSelect" required>
+                            <option value="">Select Class</option>
+                            {% for i in range(1,13) %}
+                            <option value="{{ i }}">Class {{ i }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Subject</label>
+                        <select class="form-select" name="subject" id="subjectSelect" required disabled>
+                            <option value="">Select Class First</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Resource Type</label>
+                        <select class="form-select" name="resource_type" id="resourceTypeSelect" required>
+                            <option value="">Select Type</option>
+                            <option value="chapter">Chapter</option>
+                            <option value="notes">Notes</option>
+                            <option value="solutions">Solutions</option>
+                            <option value="exam pattern">Exam Pattern</option>
+                            <option value="question bank">Question Bank</option>
+                            <option value="other">Other (specify below)</option>
+                        </select>
+                        <div class="custom-option mt-2" id="resourceTypeOtherOption" style="display:none;">
+                            <input type="text" class="form-control" name="custom_resource_type" 
+                                   placeholder="Enter custom resource type">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Book Name</label>
+                        <input type="text" class="form-control" name="book_name" placeholder="Enter book name" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Chapter Name</label>
+                        <input type="text" class="form-control" name="chapter" placeholder="Enter chapter name">
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Upload PDF File</label>
+                        <input class="form-control" type="file" name="file" accept=".pdf" required>
+                    </div>
+
+                    <div class="text-center">
+                        <button type="submit" class="btn btn-primary btn-lg px-5 py-3">
+                            <i class="fas fa-upload me-2"></i>Upload & Process
+                        </button>
+                    </div>
+                </form>
+
+                <div id="resultMessage" class="mt-4 text-center"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function loadSubjects(classLevel) {
+        if (!classLevel) return;
+        fetch(`/get_subjects/${classLevel}`)
+        .then(response => response.json())
+        .then(subjects => {
+            const subjectSelect = document.getElementById('subjectSelect');
+            subjectSelect.innerHTML = '<option value="">Select Subject</option>';
+            subjects.forEach(subject => {
+                const option = document.createElement('option');
+                option.value = subject;
+                option.textContent = subject;
+                subjectSelect.appendChild(option);
+            });
+            subjectSelect.disabled = false;
+        })
+        .catch(error => {
+            console.error('Error loading subjects:', error);
+            const subjectSelect = document.getElementById('subjectSelect');
+            subjectSelect.innerHTML = '<option value="">Error loading subjects</option>';
+            subjectSelect.disabled = true;
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const classSelect = document.getElementById('classSelect');
+        const subjectSelect = document.getElementById('subjectSelect');
+        const resourceTypeSelect = document.getElementById('resourceTypeSelect');
+        const resourceTypeOtherOptionDiv = document.getElementById('resourceTypeOtherOption');
+        const customResourceTypeInput = resourceTypeOtherOptionDiv.querySelector('input[name="custom_resource_type"]');
+
+        classSelect.addEventListener('change', function() {
+            const classLevel = this.value;
+            if (classLevel) {
+                loadSubjects(classLevel);
+            } else {
+                subjectSelect.innerHTML = '<option value="">Select Class First</option>';
+                subjectSelect.disabled = true;
+            }
+        });
+
+        resourceTypeSelect.addEventListener('change', function() {
+            if (this.value === 'other') {
+                resourceTypeOtherOptionDiv.style.display = 'block';
+                customResourceTypeInput.setAttribute('required', 'true');
+            } else {
+                resourceTypeOtherOptionDiv.style.display = 'none';
+                customResourceTypeInput.removeAttribute('required');
+            }
+        });
+
+        document.getElementById('uploadForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            console.log("🔥 Upload form submitted");
+            const formData = new FormData(this);
+            const resultDiv = document.getElementById('resultMessage');
+            resultDiv.innerHTML = `
+                <div class="text-center py-2">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Processing...</span>
+                    </div>
+                    <p class="mt-2">Processing your file...</p>
+                </div>`;
+
+            fetch('/upload_content', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    resultDiv.innerHTML = `<div class="alert alert-danger">❌ ${data.error}</div>`;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle me-2"></i>✅ ${data.message}
+                        </div>`;
+                    const selectedClass = document.getElementById('classSelect').value;
+                    this.reset();
+                    document.getElementById('classSelect').value = selectedClass;
+                    if (selectedClass) {
+                        loadSubjects(selectedClass);
+                    }
+                    resourceTypeOtherOptionDiv.style.display = 'none';
+                    customResourceTypeInput.removeAttribute('required');
+                }
+            })
+            .catch(error => {
+                console.error("Upload error: ", error);
+                resultDiv.innerHTML = `<div class="alert alert-danger">Upload failed: ${error.message}</div>`;
+            });
+        });
+    });
+</script>
+{% endblock %}

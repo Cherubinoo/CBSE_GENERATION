@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1 class="text-center mb-5 animate-on-load">Edit Uploaded Content</h1>
+
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-12">
+            <form id="editContentForm" method="POST" action="{{ url_for('edit_uploaded_content_post', content_id=content.id) }}" enctype="multipart/form-data">
+                <div class="mb-3">
+                    <label for="class" class="form-label">Class</label>
+                    <select class="form-select" id="class" name="class" required>
+                        <option value="" disabled>Select class</option>
+                        {% for class_level in classes %}
+                        <option value="{{ class_level }}" {% if class_level == content.class %}selected{% endif %}>{{ class_level }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label for="subject" class="form-label">Subject</label>
+                    <select class="form-select" id="subject" name="subject" required>
+                        <option value="" disabled>Select subject</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label for="book_name" class="form-label">Book Name</label>
+                    <input type="text" class="form-control" id="book_name" name="book_name" value="{{ content.book_name }}" required>
+                </div>
+                <div class="mb-3">
+                    <label for="chapter" class="form-label">Chapter (Optional)</label>
+                    <input type="text" class="form-control" id="chapter" name="chapter" value="{{ content.chapter or '' }}">
+                </div>
+                <div class="mb-3">
+                    <label for="resource_type" class="form-label">Resource Type</label>
+                    <select class="form-select" id="resource_type" name="resource_type" required>
+                        <option value="" disabled>Select resource type</option>
+                        {% for type in resource_types %}
+                        <option value="{{ type }}" {% if type == content.resource_type %}selected{% endif %}>{{ type }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label for="file" class="form-label">Upload New File (Optional)</label>
+                    <input type="file" class="form-control" id="file" name="file" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.txt">
+                    {% if content.filename %}
+                    <small class="form-text text-muted">Current file: {{ content.filename }} <a href="{{ url_for('static', filename='uploads/' + content.filename) }}" target="_blank">View</a></small>
+                    {% endif %}
+                </div>
+                <div class="mb-3 form-check">
+                    <input type="checkbox" class="form-check-input" id="clear_file" name="clear_file">
+                    <label class="form-check-label" for="clear_file">Clear existing file</label>
+                </div>
+                <button type="submit" class="btn btn-primary">Update Content</button>
+                <a href="{{ url_for('view_uploaded_content') }}" class="btn btn-secondary">Cancel</a>
+            </form>
+        </div>
+    </div>
+    {% if error %}
+    <p class="text-center text-danger">{{ error }}</p>
+    {% endif %}
+</div>
+
+<script>
+document.getElementById('class').addEventListener('change', function() {
+    const classLevel = this.value;
+    const subjectSelect = document.getElementById('subject');
+    subjectSelect.innerHTML = '<option value="" disabled>Select subject</option>';
+
+    if (classLevel) {
+        fetch(`/get_subjects/${classLevel}`)
+            .then(response => response.json())
+            .then(subjects => {
+                subjects.forEach(subject => {
+                    const option = document.createElement('option');
+                    option.value = subject;
+                    option.text = subject;
+                    if (subject === '{{ content.subject }}') {
+                        option.selected = true;
+                    }
+                    subjectSelect.appendChild(option);
+                });
+            })
+            .catch(error => {
+                console.error('Error fetching subjects:', error);
+            });
+    }
+});
+
+// Trigger subject population on page load
+document.getElementById('class').dispatchEvent(new Event('change'));
+
+document.getElementById('editContentForm').addEventListener('submit', function(e) {
+    const clearFile = document.getElementById('clear_file').checked;
+    const fileInput = document.getElementById('file');
+    if (!clearFile && fileInput.files.length === 0 && !'{{ content.filename }}') {
+        e.preventDefault();
+        alert('Please upload a file or check "Clear existing file" if no file is needed.');
+    }
+});
+</script>
+{% endblock %}

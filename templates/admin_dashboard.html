@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1 class="text-center mb-5 animate-on-load">Content Management System</h1>
+
+<div class="dashboard-cards row g-4">
+    <div class="col-md-6 col-lg-3">
+        <div class="card h-100 dashboard-card animate-on-load" 
+             onclick="window.location.href='/upload_content'">
+            <div class="card-body text-center">
+                <i class="fas fa-upload display-1 mb-3"></i>
+                <h3>Upload Content</h3>
+                <p>Add new study materials</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 col-lg-3">
+        <div class="card h-100 dashboard-card animate-on-load" 
+             onclick="window.location.href='/create_exam_pattern'">
+            <div class="card-body text-center">
+                <i class="fas fa-plus-circle display-1 mb-3"></i>
+                <h3>Create Exam Pattern</h3>
+                <p>Design new assessments</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 col-lg-3">
+        <div class="card h-100 dashboard-card animate-on-load" 
+             onclick="window.location.href='/edit_exam_pattern'">
+            <div class="card-body text-center">
+                <i class="fas fa-edit display-1 mb-3"></i>
+                <h3>Edit Exam Pattern</h3>
+                <p>Modify existing patterns</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 col-lg-3">
+        <div class="card h-100 dashboard-card animate-on-load" 
+             onclick="window.location.href='/manage_subjects'">
+            <div class="card-body text-center">
+                <i class="fas fa-book display-1 mb-3"></i>
+                <h3>Manage Subjects</h3>
+                <p>Add or view subjects</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 col-lg-3">
+        <div class="card h-100 dashboard-card animate-on-load" 
+             onclick="window.location.href='/generate_question_paper'">
+            <div class="card-body text-center">
+                <i class="fas fa-file-alt display-1 mb-3"></i>
+                <h3>Generate Question Paper</h3>
+                <p>Create customized question papers</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 col-lg-3">
+        <div class="card h-100 dashboard-card animate-on-load" 
+             onclick="window.location.href='/analytics'">
+            <div class="card-body text-center">
+                <i class="fas fa-chart-bar display-1 mb-3"></i>
+                <h3>Analytics</h3>
+                <p>View usage statistics</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 col-lg-3">
+        <div class="card h-100 dashboard-card animate-on-load" 
+             onclick="window.location.href='/view_uploaded_content'">
+            <div class="card-body text-center">
+                <i class="fas fa-folder-open display-1 mb-3"></i>
+                <h3>View Uploaded Content</h3>
+                <p>View, edit, or delete uploaded materials</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 col-lg-3">
+        <div class="card h-100 dashboard-card animate-on-load" 
+             onclick="window.location.href='/view_staff'">
+            <div class="card-body text-center">
+                <i class="fas fa-users display-1 mb-3"></i>
+                <h3>Manage Staff</h3>
+                <p>Add, edit, or delete staff details</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="card shadow-sm border-0 animate__animated animate__fadeIn">
+        <div class="card-header bg-primary text-white d-flex align-items-center justify-content-between">
+            <h2 class="mb-0"><i class="fas fa-book me-2"></i>Manage Subjects</h2>
+        </div>
+        <div class="card-body p-4">
+            <!-- Feedback Messages -->
+            <div id="feedbackMessage" class="mb-3"></div>
+
+            <!-- Add Subject Form -->
+            <div class="mb-5">
+                <h4 class="fw-bold mb-3">Add New Subject</h4>
+                <form id="addSubjectForm" class="row g-3">
+                    <div class="col-md-4">
+                        <label for="addClassSelect" class="form-label fw-bold">Class</label>
+                        <select class="form-select" id="addClassSelect" name="class_level" required>
+                            <option value="">Select Class</option>
+                            {% for i in range(1,13) %}
+                            <option value="{{ i }}">Class {{ i }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="addSubjectName" class="form-label fw-bold">Subject Name</label>
+                        <input type="text" class="form-control" id="addSubjectName" name="subject_name" placeholder="Enter subject name" required>
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <button type="submit" class="btn btn-primary w-100" id="addSubjectButton">
+                            <i class="fas fa-plus-circle me-2"></i>Add Subject
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- View Subjects -->
+            <div>
+                <h4 class="fw-bold mb-3">View and Manage Subjects</h4>
+                <div class="mb-3">
+                    <label for="viewClassSelect" class="form-label fw-bold">Select Class</label>
+                    <select class="form-select w-auto" id="viewClassSelect">
+                        <option value="">Select Class</option>
+                        {% for i in range(1,13) %}
+                        <option value="{{ i }}">Class {{ i }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover table-bordered align-middle" id="subjectsTable" style="display:none;">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col">Subject Name</th>
+                                <th scope="col" style="width: 250px;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="subjectsTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+    .animate__fadeIn { animation: fadeIn 0.5s; }
+    .table th, .table td { vertical-align: middle; }
+    .edit-form { display: none; }
+    .btn-sm { font-size: 0.85rem; }
+</style>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const addSubjectForm = document.getElementById('addSubjectForm');
+        const addSubjectButton = document.getElementById('addSubjectButton');
+        const viewClassSelect = document.getElementById('viewClassSelect');
+        const subjectsTable = document.getElementById('subjectsTable');
+        const subjectsTableBody = document.getElementById('subjectsTableBody');
+        const feedbackMessage = document.getElementById('feedbackMessage');
+
+        // Show feedback message
+        function showFeedback(message, type = 'success') {
+            feedbackMessage.innerHTML = `
+                <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>`;
+            setTimeout(() => feedbackMessage.innerHTML = '', 5000);
+        }
+
+        // Load subjects for selected class
+        async function loadSubjects(classLevel) {
+            if (!classLevel) {
+                subjectsTable.style.display = 'none';
+                return;
+            }
+            try {
+                const response = await fetch(`/get_subjects_with_id/${classLevel}`);
+                const subjects = await response.json();
+                subjectsTableBody.innerHTML = '';
+                if (subjects.length === 0) {
+                    subjectsTableBody.innerHTML = '<tr><td colspan="2" class="text-center">No subjects found</td></tr>';
+                    subjectsTable.style.display = 'table';
+                } else {
+                    subjects.forEach(subject => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td id="subjectName-${subject.id}">${subject.name}</td>
+                            <td>
+                                <div class="action-buttons">
+                                    <button class="btn btn-sm btn-warning me-2 edit-subject" data-id="${subject.id}" data-class="${classLevel}" data-name="${subject.name}">
+                                        <i class="fas fa-edit"></i> Edit
+                                    </button>
+                                    <button class="btn btn-sm btn-danger delete-subject" data-id="${subject.id}">
+                                        <i class="fas fa-trash"></i> Delete
+                                    </button>
+                                </div>
+                                <form class="edit-form" id="editForm-${subject.id}" style="display:none;">
+                                    <div class="input-group">
+                                        <input type="text" class="form-control form-control-sm" value="${subject.name}" id="editInput-${subject.id}" required>
+                                        <button type="submit" class="btn btn-sm btn-success save-edit" data-id="${subject.id}" data-class="${classLevel}">
+                                            <i class="fas fa-save"></i> Save
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-secondary cancel-edit" data-id="${subject.id}">
+                                            <i class="fas fa-times"></i> Cancel
+                                        </button>
+                                    </div>
+                                </form>
+                            </td>
+                        `;
+                        subjectsTableBody.appendChild(tr);
+                    });
+                    subjectsTable.style.display = 'table';
+                }
+            } catch (error) {
+                console.error('Error loading subjects:', error);
+                showFeedback('Failed to load subjects', 'danger');
+                subjectsTable.style.display = 'none';
+            }
+        }
+
+        // Handle add subject form submission
+        addSubjectForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const classLevel = document.getElementById('addClassSelect').value;
+            const subjectName = document.getElementById('addSubjectName').value.trim();
+            if (!classLevel || !subjectName) {
+                showFeedback('Class and subject name are required', 'danger');
+                return;
+            }
+            addSubjectButton.disabled = true;
+            try {
+                const response = await fetch('/manage_subjects', {
+                    method: 'POST',
+                    body: new FormData(addSubjectForm)
+                });
+                const data = await response.json();
+                if (data.error) {
+                    showFeedback(data.error, 'danger');
+                } else {
+                    showFeedback('Subject added successfully', 'success');
+                    addSubjectForm.reset();
+                    if (viewClassSelect.value === classLevel) {
+                        loadSubjects(classLevel);
+                    }
+                }
+            } catch (error) {
+                console.error('Error adding subject:', error);
+                showFeedback('Failed to add subject', 'danger');
+            } finally {
+                addSubjectButton.disabled = false;
+            }
+        });
+
+        // Handle class selection for viewing subjects
+        viewClassSelect.addEventListener('change', () => loadSubjects(viewClassSelect.value));
+
+        // Handle edit and delete actions
+        subjectsTableBody.addEventListener('click', async (e) => {
+            const target = e.target.closest('button');
+            if (!target) return;
+
+            const subjectId = target.dataset.id;
+            const classLevel = target.dataset.class;
+
+            if (target.classList.contains('edit-subject')) {
+                // Show edit form, hide action buttons
+                document.getElementById(`subjectName-${subjectId}`).style.display = 'none';
+                document.getElementById(`editForm-${subjectId}`).style.display = 'block';
+                target.parentElement.style.display = 'none';
+            } else if (target.classList.contains('cancel-edit')) {
+                // Hide edit form, show action buttons
+                document.getElementById(`subjectName-${subjectId}`).style.display = 'table-cell';
+                document.getElementById(`editForm-${subjectId}`).style.display = 'none';
+                target.closest('.action-buttons').style.display = 'block';
+            } else if (target.classList.contains('save-edit')) {
+                e.preventDefault();
+                const newName = document.getElementById(`editInput-${subjectId}`).value.trim();
+                if (!newName) {
+                    showFeedback('Subject name is required', 'danger');
+                    return;
+                }
+                target.disabled = true;
+                try {
+                    const response = await fetch(`/edit_subject/${subjectId}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ class_level: classLevel, subject_name: newName })
+                    });
+                    const data = await response.json();
+                    if (data.error) {
+                        showFeedback(data.error, 'danger');
+                    } else {
+                        showFeedback('Subject updated successfully', 'success');
+                        loadSubjects(classLevel);
+                    }
+                } catch (error) {
+                    console.error('Error editing subject:', error);
+                    showFeedback('Failed to edit subject', 'danger');
+                } finally {
+                    target.disabled = false;
+                }
+            } else if (target.classList.contains('delete-subject')) {
+                if (confirm('Are you sure you want to delete this subject?')) {
+                    target.disabled = true;
+                    try {
+                        const response = await fetch(`/delete_subject/${subjectId}`, {
+                            method: 'POST'
+                        });
+                        const data = await response.json();
+                        if (data.error) {
+                            showFeedback(data.error, 'danger');
+                        } else {
+                            showFeedback('Subject deleted successfully', 'success');
+                            loadSubjects(classLevel);
+                        }
+                    } catch (error) {
+                        console.error('Error deleting subject:', error);
+                        showFeedback('Failed to delete subject', 'danger');
+                    } finally {
+                        target.disabled = false;
+                    }
+                }
+            }
+        });
+    });
+</script>
+{% endblock %}

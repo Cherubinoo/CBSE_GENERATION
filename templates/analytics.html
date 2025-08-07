@@ -1,0 +1,345 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    body {
+        background: #ecf0f1;
+        font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: #2c3e50;
+    }
+    .analytics-container {
+        background: #fff;
+        border-radius: 8px;
+        padding: 2rem;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    }
+    .card-analytics {
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        transition: box-shadow 0.3s;
+        background: #fff;
+    }
+    .card-analytics:hover {
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+    }
+    .card-analytics i {
+        color: #3498db;
+    }
+    .card-title {
+        font-size: 1.1rem;
+        font-weight: 500;
+        color: #2c3e50;
+    }
+    .card-text {
+        font-size: 1.8rem;
+        font-weight: 600;
+        color: #3498db;
+    }
+    .section-title {
+        font-size: 1.8rem;
+        font-weight: 600;
+        color: #2c3e50;
+        margin-bottom: 1.5rem;
+    }
+    .form-select {
+        border: 1px solid #3498db;
+        border-radius: 6px;
+        padding: 0.75rem;
+        font-size: 1rem;
+        background: #fff;
+    }
+    .form-select:focus {
+        border-color: #2980b9;
+        box-shadow: 0 0 5px rgba(52, 152, 219, 0.3);
+    }
+    .btn-back {
+        background: #3498db;
+        border: none;
+        border-radius: 6px;
+        padding: 0.75rem 1.5rem;
+        color: #fff;
+        font-weight: 500;
+        transition: background 0.3s;
+    }
+    .btn-back:hover {
+        background: #2980b9;
+    }
+    #classAnalytics {
+        background: #f9f9f9;
+        border-radius: 8px;
+        padding: 1.5rem;
+        border: 1px solid #e0e0e0;
+    }
+    .chart-container {
+        max-width: 800px;
+        margin: 0 auto;
+    }
+</style>
+
+<div class="container my-5 analytics-container animate__animated animate__fadeIn">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="section-title">Analytics Dashboard</h1>
+        <a href="/admin_dashboard" class="btn btn-back">Back to Dashboard</a>
+    </div>
+
+    <!-- Class Selection Dropdown -->
+    <div class="row justify-content-center mb-4">
+        <div class="col-md-6">
+            <select id="classSelect" class="form-select animate__animated animate__fadeIn">
+                <option value="">All Classes</option>
+                <!-- Populated dynamically -->
+            </select>
+        </div>
+    </div>
+
+    <!-- Overall Analytics -->
+    <h3 class="section-title animate__animated animate__fadeIn">Overall Analytics</h3>
+    <div class="row g-4 mb-5" id="overallAnalytics">
+        <div class="col-md-6 col-lg-2">
+            <div class="card card-analytics animate__animated animate__fadeInUp">
+                <div class="card-body text-center">
+                    <i class="fas fa-school fa-2x mb-3"></i>
+                    <h5 class="card-title">Total Classes</h5>
+                    <p class="card-text"><span id="totalClasses">Loading...</span></p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 col-lg-2">
+            <div class="card card-analytics animate__animated animate__fadeInUp" style="animation-delay: 0.1s;">
+                <div class="card-body text-center">
+                    <i class="fas fa-book fa-2x mb-3"></i>
+                    <h5 class="card-title">Total Subjects</h5>
+                    <p class="card-text"><span id="totalSubjects">Loading...</span></p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 col-lg-2">
+            <div class="card card-analytics animate__animated animate__fadeInUp" style="animation-delay: 0.2s;">
+                <div class="card-body text-center">
+                    <i class="fas fa-folder fa-2x mb-3"></i>
+                    <h5 class="card-title">Total Resources</h5>
+                    <p class="card-text"><span id="totalResources">Loading...</span></p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 col-lg-2">
+            <div class="card card-analytics animate__animated animate__fadeInUp" style="animation-delay: 0.3s;">
+                <div class="card-body text-center">
+                    <i class="fas fa-book-open fa-2x mb-3"></i>
+                    <h5 class="card-title">Total Books</h5>
+                    <p class="card-text"><span id="totalBooks">Loading...</span></p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 col-lg-2">
+            <div class="card card-analytics animate__animated animate__fadeInUp" style="animation-delay: 0.4s;">
+                <div class="card-body text-center">
+                    <i class="fas fa-sticky-note fa-2x mb-3"></i>
+                    <h5 class="card-title">Total Notes</h5>
+                    <p class="card-text"><span id="totalNotes">Loading...</span></p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 col-lg-2">
+            <div class="card card-analytics animate__animated animate__fadeInUp" style="animation-delay: 0.5s;">
+                <div class="card-body text-center">
+                    <i class="fas fa-clipboard-list fa-2x mb-3"></i>
+                    <h5 class="card-title">Total Exam Patterns</h5>
+                    <p class="card-text"><span id="totalPatterns">Loading...</span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Class-wise Analytics -->
+    <div id="classAnalytics" class="mt-5" style="display: none;">
+        <h3 class="section-title animate__animated animate__fadeIn">Class <span id="selectedClass"></span> Analytics</h3>
+        <div class="row g-4 mb-5">
+            <div class="col-md-6 col-lg-2">
+                <div class="card card-analytics animate__animated animate__fadeInUp">
+                    <div class="card-body text-center">
+                        <i class="fas fa-book fa-2x mb-3"></i>
+                        <h5 class="card-title">Subjects</h5>
+                        <p class="card-text"><span id="classSubjects">Loading...</span></p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-2">
+                <div class="card card-analytics animate__animated animate__fadeInUp" style="animation-delay: 0.1s;">
+                    <div class="card-body text-center">
+                        <i class="fas fa-folder fa-2x mb-3"></i>
+                        <h5 class="card-title">Resources</h5>
+                        <p class="card-text"><span id="classResources">Loading...</span></p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-2">
+                <div class="card card-analytics animate__animated animate__fadeInUp" style="animation-delay: 0.2s;">
+                    <div class="card-body text-center">
+                        <i class="fas fa-book-open fa-2x mb-3"></i>
+                        <h5 class="card-title">Books</h5>
+                        <p class="card-text"><span id="classBooks">Loading...</span></p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-2">
+                <div class="card card-analytics animate__animated animate__fadeInUp" style="animation-delay: 0.3s;">
+                    <div class="card-body text-center">
+                        <i class="fas fa-sticky-note fa-2x mb-3"></i>
+                        <h5 class="card-title">Notes</h5>
+                        <p class="card-text"><span id="classNotes">Loading...</span></p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-2">
+                <div class="card card-analytics animate__animated animate__fadeInUp" style="animation-delay: 0.4s;">
+                    <div class="card-body text-center">
+                        <i class="fas fa-clipboard-list fa-2x mb-3"></i>
+                        <h5 class="card-title">Exam Patterns</h5>
+                        <p class="card-text"><span id="classPatterns">Loading...</span></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Bar Chart -->
+        <div class="card card-analytics mt-4 animate__animated animate__fadeInUp chart-container" style="animation-delay: 0.5s;">
+            <div class="card-body">
+                <h5 class="card-title text-center">Class Analytics Breakdown</h5>
+                <canvas id="classAnalyticsChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const classSelect = document.getElementById('classSelect');
+    const overallAnalytics = document.getElementById('overallAnalytics');
+    const classAnalytics = document.getElementById('classAnalytics');
+    let analyticsChart = null;
+
+    function fetchAnalytics(classLevel = '') {
+        fetch(`/get_analytics?class_level=${classLevel}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    overallAnalytics.innerHTML = `<p class="text-danger text-center">Error: ${data.error}</p>`;
+                    classAnalytics.style.display = 'none';
+                    return;
+                }
+
+                // Populate overall analytics
+                document.getElementById('totalClasses').textContent = data.total_classes;
+                document.getElementById('totalSubjects').textContent = data.total_subjects;
+                document.getElementById('totalResources').textContent = data.total_resources;
+                document.getElementById('totalBooks').textContent = data.total_books;
+                document.getElementById('totalNotes').textContent = data.total_notes;
+                document.getElementById('totalPatterns').textContent = data.total_patterns;
+
+                // Populate class dropdown (only once)
+                if (classSelect.options.length === 1) {
+                    data.classes.forEach(cls => {
+                        const option = document.createElement('option');
+                        option.value = cls;
+                        option.textContent = `Class ${cls}`;
+                        classSelect.appendChild(option);
+                    });
+                }
+
+                // Update class-wise analytics
+                if (data.class_analytics) {
+                    classAnalytics.style.display = 'block';
+                    document.getElementById('selectedClass').textContent = data.class_analytics.class_level;
+                    document.getElementById('classSubjects').textContent = data.class_analytics.subjects;
+                    document.getElementById('classResources').textContent = data.class_analytics.resources;
+                    document.getElementById('classBooks').textContent = data.class_analytics.books;
+                    document.getElementById('classNotes').textContent = data.class_analytics.notes;
+                    document.getElementById('classPatterns').textContent = data.class_analytics.patterns;
+
+                    // Update chart
+                    if (analyticsChart) {
+                        analyticsChart.destroy();
+                    }
+                    const ctx = document.getElementById('classAnalyticsChart').getContext('2d');
+                    analyticsChart = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: ['Subjects', 'Resources', 'Books', 'Notes', 'Exam Patterns'],
+                            datasets: [{
+                                label: `Class ${data.class_analytics.class_level} Analytics`,
+                                data: [
+                                    data.class_analytics.subjects,
+                                    data.class_analytics.resources,
+                                    data.class_analytics.books,
+                                    data.class_analytics.notes,
+                                    data.class_analytics.patterns
+                                ],
+                                backgroundColor: 'rgba(52, 152, 219, 0.2)',
+                                borderColor: 'rgba(52, 152, 219, 1)',
+                                borderWidth: 1
+                            }]
+                        },
+                        options: {
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    title: {
+                                        display: true,
+                                        text: 'Count',
+                                        font: { size: 14 }
+                                    },
+                                    grid: {
+                                        color: 'rgba(0, 0, 0, 0.05)'
+                                    }
+                                },
+                                x: {
+                                    grid: {
+                                        display: false
+                                    }
+                                }
+                            },
+                            plugins: {
+                                legend: {
+                                    display: true,
+                                    position: 'top',
+                                    labels: {
+                                        font: { size: 12 }
+                                    }
+                                }
+                            },
+                            animation: {
+                                duration: 1000,
+                                easing: 'easeInOutQuad'
+                            }
+                        }
+                    });
+                } else {
+                    classAnalytics.style.display = 'none';
+                    if (analyticsChart) {
+                        analyticsChart.destroy();
+                        analyticsChart = null;
+                    }
+                }
+            })
+            .catch(error => {
+                overallAnalytics.innerHTML = `<p class="text-danger text-center">Error fetching analytics: ${error.message}</p>`;
+                classAnalytics.style.display = 'none';
+                if (analyticsChart) {
+                    analyticsChart.destroy();
+                    analyticsChart = null;
+                }
+            });
+    }
+
+    // Initial fetch for overall analytics
+    fetchAnalytics();
+
+    // Fetch class-wise analytics on class selection
+    classSelect.addEventListener('change', function() {
+        fetchAnalytics(this.value);
+    });
+});
+</script>
+{% endblock %}

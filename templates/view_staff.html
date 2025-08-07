@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block head %}
+{{ super() }}
+<style>
+    .container { max-width: 1200px; margin: 2rem auto; }
+    .dashboard-cards { margin: 0 -0.5rem; }
+    .dashboard-card { transition: transform 0.2s; }
+    .dashboard-card:hover { transform: scale(1.02); }
+    .form-control, .btn { font-size: 0.9rem; }
+    .filter-form { margin-bottom: 2rem; text-align: center; }
+    .filter-form select { max-width: 200px; display: inline-block; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1 class="text-center mb-5 animate-on-load">Staff Management</h1>
+
+    <!-- Filter by Role -->
+    <form class="filter-form" method="GET" action="{{ url_for('view_staff') }}">
+        <select class="form-control" id="role_filter" name="role" onchange="this.form.submit()">
+            <option value="all" {% if role_filter == 'all' %}selected{% endif %}>All Roles</option>
+            <option value="Teacher" {% if role_filter == 'Teacher' %}selected{% endif %}>Teacher</option>
+            <option value="Admin" {% if role_filter == 'Admin' %}selected{% endif %}>Admin</option>
+            <option value="Support" {% if role_filter == 'Support' %}selected{% endif %}>Support</option>
+        </select>
+    </form>
+
+    <div class="dashboard-cards row g-4">
+        <!-- Add New Staff Card -->
+        <div class="col-md-6 col-lg-3">
+            <div class="card h-100 dashboard-card animate-on-load">
+                <div class="card-body text-center">
+                    <i class="fas fa-user-plus display-1 mb-3"></i>
+                    <h3>Add New Staff</h3>
+                    <form method="POST" action="{{ url_for('add_staff') }}">
+                        <div class="mb-3">
+                            <input type="text" class="form-control" id="name" name="name" placeholder="Name" required>
+                        </div>
+                        <div class="mb-3">
+                            <select class="form-control" id="role" name="role" required>
+                                <option value="Teacher">Teacher</option>
+                                <option value="Admin">Admin</option>
+                                <option value="Support">Support</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <input type="email" class="form-control" id="email" name="email" placeholder="Email" required>
+                        </div>
+                        <div class="mb-3">
+                            <input type="text" class="form-control" id="phone" name="phone" placeholder="Phone">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Add Staff</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Staff List Cards -->
+        {% if staff %}
+            {% for s in staff %}
+                <div class="col-md-6 col-lg-3">
+                    <div class="card h-100 dashboard-card animate-on-load">
+                        <div class="card-body text-center">
+                            <i class="fas fa-user display-1 mb-3"></i>
+                            <h3>{{ s.name }}</h3>
+                            <p><strong>Role:</strong> {{ s.role }}</p>
+                            <p><strong>Email:</strong> {{ s.email }}</p>
+                            <p><strong>Phone:</strong> {{ s.phone|default('N/A') }}</p>
+                            <div class="d-flex justify-content-center gap-2">
+                                <a href="{{ url_for('edit_staff', id=s.id) }}" class="btn btn-primary btn-sm">
+                                    <i class="fas fa-edit"></i> Edit
+                                </a>
+                                <a href="{{ url_for('delete_staff', id=s.id) }}" class="btn btn-danger btn-sm"
+                                   onclick="return confirm('Are you sure you want to delete {{ s.name }}?');">
+                                    <i class="fas fa-trash"></i> Delete
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        {% else %}
+            <div class="col-12">
+                <div class="card h-100 dashboard-card animate-on-load">
+                    <div class="card-body text-center text-danger">
+                        <i class="fas fa-exclamation-circle display-1 mb-3"></i>
+                        <h3>No Staff Found</h3>
+                        <p>Add staff members to see them here.</p>
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
