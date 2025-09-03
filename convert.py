@@ -1,12 +1,18 @@
+# convert.py
 import os
 import tempfile
 from pdf2image import convert_from_path
 from pdf2image.exceptions import PDFPageCountError
 from paddleocr import PaddleOCR
-import numpy as np
-from pathlib import Path
-import sys
-import json
+import logging
+
+# Logging setup (aligned with app.py)
+logger = logging.getLogger('CONVERT')
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logger.addHandler(handler)
 
 # Set poppler path (Windows)
 poppler_path = r"C:\poppler\Library\poppler-24.08.0\Library\bin"
@@ -19,22 +25,22 @@ def extract_text_from_pdf(filepath):
     Extract text from a PDF using OCR.
     """
     try:
-        print(f"\n[DEBUG] Starting PDF processing for: {filepath}")
-        print(f"[DEBUG] Using Poppler path: {poppler_path}")
+        logger.info(f"Starting PDF processing for: {filepath}")
+        logger.debug(f"Using Poppler path: {poppler_path}")
 
         # Step 1: Convert PDF pages to images
         try:
             images = convert_from_path(filepath, poppler_path=poppler_path)
             if not images:
-                print("[DEBUG] No images converted from PDF. Check PDF content or Poppler setup.")
+                logger.warning("No images converted from PDF. Check PDF content or Poppler setup.")
                 return None
-            print(f"[DEBUG] Successfully converted {len(images)} pages to images.")
+            logger.info(f"Successfully converted {len(images)} pages to images.")
         except PDFPageCountError as e:
-            print(f"[ERROR] PDF Page Count Error during convert_from_path: {e}")
-            print(f"[ERROR] This often means the PDF is malformed or encrypted. File: {filepath}")
+            logger.error(f"PDF Page Count Error during convert_from_path: {e}")
+            logger.error(f"This often means the PDF is malformed or encrypted. File: {filepath}")
             return None
         except Exception as e:
-            print(f"[ERROR] Unexpected error during convert_from_path: {e}. File: {filepath}")
+            logger.error(f"Unexpected error during convert_from_path: {e}. File: {filepath}")
             return None
 
         all_text = []
@@ -45,14 +51,14 @@ def extract_text_from_pdf(filepath):
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_img:
                     temp_img_path = temp_img.name
                     image.save(temp_img_path, "PNG")
-                print(f"[DEBUG] Saved page {i+1} to temporary image: {temp_img_path}")
+                logger.debug(f"Saved page {i+1} to temporary image: {temp_img_path}")
 
                 # OCR
                 result = ocr.ocr(temp_img_path)
-                print(f"[DEBUG] OCR processed page {i+1}. Result type: {type(result)}")
+                logger.debug(f"OCR processed page {i+1}. Result type: {type(result)}")
 
                 if not result or not result[0]:
-                    print(f"[DEBUG] No text detected by OCR on page {i+1}.")
+                    logger.debug(f"No text detected by OCR on page {i+1}.")
                     continue
 
                 # Flatten the structure if result is nested
@@ -62,37 +68,42 @@ def extract_text_from_pdf(filepath):
                         if isinstance(line, list) and len(line) > 1 and isinstance(line[1], tuple):
                             page_text_lines.append(line[1][0])
                         else:
-                            print(f"[DEBUG] Unexpected OCR line format on page {i+1}: {line}")
+                            logger.debug(f"Unexpected OCR line format on page {i+1}: {line}")
                 else:
-                    print(f"[DEBUG] OCR result[0] is not a list. Type: {type(result[0])}")
+                    logger.debug(f"OCR result[0] is not a list. Type: {type(result[0])}")
 
                 page_text = "\n".join(page_text_lines)
                 if page_text:
                     all_text.append(page_text)
-                    print(f"[DEBUG] Extracted text from page {i+1} (first 50 chars): '{page_text[:50]}'")
+                    logger.debug(f"Extracted text from page {i+1} (first 50 chars): '{page_text[:50]}'")
                 else:
-                    print(f"[DEBUG] No valid text lines extracted from page {i+1} despite OCR result.")
+                    logger.debug(f"No valid text lines extracted from page {i+1} despite OCR result.")
 
             except Exception as e:
-                print(f"[ERROR] Error during processing of page {i+1}: {e}")
+                logger.error(f"Error during processing of page {i+1}: {e}")
             finally:
                 if temp_img_path and os.path.exists(temp_img_path):
-                    os.remove(temp_img_path)
-                    print(f"[DEBUG] Removed temporary image: {temp_img_path}")
+                    try:
+                        os.remove(temp_img_path)
+                        logger.debug(f"Removed temporary image: {temp_img_path}")
+                    except OSError as e:
+                        logger.error(f"Failed to remove temporary image {temp_img_path}: {e}")
 
         if not all_text:
-            print("[DEBUG] No text extracted from any page after iterating all images.")
+            logger.warning("No text extracted from any page after iterating all images.")
             return None
 
         final_output = "\n\n".join(all_text)
-        print(f"[DEBUG] Successfully extracted total text length: {len(final_output)}")
+        logger.info(f"Successfully extracted total text length: {len(final_output)}")
         return final_output
 
     except Exception as e:
-        print(f"[ERROR] Overall OCR process failed: {e}")
+        logger.error(f"Overall OCR process failed: {e}")
         return None
 
 if __name__ == "__main__":
+    import sys
+    import json
     if len(sys.argv) != 2:
         print(json.dumps({"error": "Usage: python convert.py path_to_pdf"}))
         sys.exit(1)

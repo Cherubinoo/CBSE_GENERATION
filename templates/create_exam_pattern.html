@@ -1,25 +1,42 @@
 {% extends "base.html" %}
-
 {% block content %}
-<div class="container py-5">
-    <div class="card shadow-sm border-0 animate__animated animate__fadeIn">
-        <div class="card-header bg-primary text-white d-flex align-items-center justify-content-between">
-            <h2 class="mb-0"><i class="fas fa-file-alt me-2"></i>Create New Exam Pattern</h2>
-        </div>
-        <div class="card-body p-4">
-            <form id="examPatternForm" enctype="multipart/form-data">
-                <div class="row mb-4">
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label fw-bold">Class</label>
-                        <select class="form-select" name="class" id="classSelect" required>
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card shadow-lg animate-on-load">
+            <div class="card-header bg-primary text-white">
+                <h2 class="text-center"><i class="fas fa-file-alt me-2"></i>Create Exam Pattern</h2>
+            </div>
+            <div class="card-body">
+                <form id="examPatternForm" method="POST" enctype="multipart/form-data" class="space-y-4">
+                    <!-- Class Selection -->
+                    <div class="mb-3">
+                        <label for="class" class="form-label fw-bold">Class</label>
+                        <select class="form-select class-select" name="class" id="classSelect" required>
                             <option value="">Select Class</option>
                             {% for i in range(1,13) %}
                             <option value="{{ i }}">Class {{ i }}</option>
                             {% endfor %}
                         </select>
                     </div>
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label fw-bold">Exam Type</label>
+                    <!-- Subject Selection with Checkboxes -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Select Subjects</label>
+                        <div id="subjectsContainer" class="border rounded-md p-4 bg-gray-50 max-h-60 overflow-y-auto">
+                            <p id="subjectsPlaceholder" class="text-sm text-gray-500">Select a class to load available subjects</p>
+                        </div>
+                        <input type="hidden" id="subjectsHidden" name="subjects" required>
+                        <p id="subjectsError" class="text-sm text-red-600 hidden mt-1">At least one subject must be selected</p>
+                    </div>
+                    <!-- Sub-Subject Selection (for Social Studies and Science) -->
+                    <div class="mb-3" id="subSubjectDiv" style="display:none;">
+                        <label for="sub_subject" class="form-label fw-bold">Sub-Subject</label>
+                        <select class="form-select" name="sub_subject" id="subSubjectSelect" disabled>
+                            <option value="">Select Sub-Subject</option>
+                        </select>
+                    </div>
+                    <!-- Exam Type Selection -->
+                    <div class="mb-3">
+                        <label for="exam_type" class="form-label fw-bold">Exam Type</label>
                         <select class="form-select" name="exam_type" id="examTypeSelect" required>
                             <option value="">Select Exam Type</option>
                             <option value="unit test">Unit Test</option>
@@ -30,285 +47,322 @@
                             <option value="2nd terminal">2nd Terminal</option>
                             <option value="other">Other (specify below)</option>
                         </select>
-                        <div class="mt-2" id="examTypeOtherOption" style="display:none;">
-                            <input type="text" class="form-control" name="custom_exam_type" 
+                        <div class="custom-option mt-2" id="customExamTypeDiv" style="display:none;">
+                            <input type="text" class="form-control" name="custom_exam_type" id="customExamTypeInput"
                                    placeholder="Enter custom exam type">
                         </div>
                     </div>
-                </div>
-                
-                <div class="mb-4">
-                    <label class="form-label fw-bold">Select Chapters</label>
-                    <div id="chaptersContainer">
-                        <div class="alert alert-info">
-                            <i class="fas fa-info-circle me-2"></i>Select a class to load available chapters
+                    <!-- Chapters Selection with Checkboxes -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Select Chapters</label>
+                        <div id="chaptersContainer" class="border rounded-md p-4 bg-gray-50 max-h-60 overflow-y-auto">
+                            <p id="chaptersPlaceholder" class="text-sm text-gray-500">Select a class and at least one subject to load available chapters</p>
                         </div>
+                        <input type="hidden" id="chaptersHidden" name="chapters" required>
+                        <p id="chaptersError" class="text-sm text-red-600 hidden mt-1">At least one chapter must be selected</p>
                     </div>
-                    <div class="mt-3">
-                        <button type="button" class="btn btn-sm btn-outline-primary" id="addChapterBtn">
-                            <i class="fas fa-plus me-1"></i>Add Custom Chapter
+                    <!-- File Upload -->
+                    <div class="mb-4">
+                        <label for="file" class="form-label fw-bold">Upload Exam Pattern Document</label>
+                        <p class="text-sm text-gray-500">Upload a document containing the exam pattern details (PDF, DOC, DOCX, TXT, max 10MB).</p>
+                        <input class="form-control" type="file" name="file" id="fileInput" accept=".pdf,.doc,.docx,.txt" required>
+                    </div>
+                    <!-- Submit Button -->
+                    <div class="text-center">
+                        <button type="submit" class="btn btn-primary btn-lg px-5 py-3">
+                            <i class="fas fa-upload me-2"></i>Create & Process
                         </button>
-                        <div class="mt-2" id="customChapterOption" style="display:none;">
-                            <input type="text" class="form-control" name="custom_chapter" 
-                                   placeholder="Enter new chapter name">
-                            <button type="button" class="btn btn-primary btn-sm mt-2" id="saveChapterBtn">
-                                <i class="fas fa-save me-1"></i>Save Chapter
-                            </button>
-                        </div>
                     </div>
-                </div>
-                
-                <div class="mb-4">
-                    <label class="form-label fw-bold">Marking Scheme</label>
-                    <textarea class="form-control" name="marking_scheme" rows="6" 
-                              placeholder="Enter marking scheme details..." required></textarea>
-                </div>
-                
-                <div class="mb-4">
-                    <label class="form-label fw-bold">Upload Exam Pattern Document (PDF, DOC, DOCX)</label>
-                    <input type="file" class="form-control" name="file" id="fileInput" 
-                           accept=".pdf,.doc,.docx">
-                    <small class="form-text text-muted">Optional: Upload a document to include with the exam pattern (max 10MB).</small>
-                </div>
-                
-                <div class="text-center">
-                    <button type="submit" class="btn btn-primary btn-lg px-5 py-3" id="submitButton">
-                        <span id="submitButtonText"><i class="fas fa-save me-2"></i>Create Exam Pattern</span>
-                        <span id="submitButtonSpinner" class="spinner-border spinner-border-sm d-none" role="status"></span>
-                    </button>
-                </div>
-            </form>
-            
-            <div id="resultMessage" class="mt-4 text-center"></div>
+                </form>
+                <!-- Result Message -->
+                <div id="resultMessage" class="mt-4 text-center"></div>
+            </div>
         </div>
     </div>
 </div>
 {% endblock %}
-
 {% block scripts %}
-<style>
-    .animate__fadeIn { animation: fadeIn 0.5s; }
-    .chapter-item { margin-bottom: 0.5rem; }
-    .spinner-border-sm { margin-left: 8px; }
-</style>
 <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        const examPatternForm = document.getElementById('examPatternForm');
-        const classSelect = document.getElementById('classSelect');
-        const examTypeSelect = document.getElementById('examTypeSelect');
-        const chaptersContainer = document.getElementById('chaptersContainer');
-        const addChapterBtn = document.getElementById('addChapterBtn');
-        const saveChapterBtn = document.getElementById('saveChapterBtn');
-        const customChapterOption = document.getElementById('customChapterOption');
-        const examTypeOtherOption = document.getElementById('examTypeOtherOption');
-        const resultMessage = document.getElementById('resultMessage');
-        const submitButton = document.getElementById('submitButton');
-        const submitButtonText = document.getElementById('submitButtonText');
-        const submitButtonSpinner = document.getElementById('submitButtonSpinner');
-        const fileInput = document.getElementById('fileInput');
+document.addEventListener('DOMContentLoaded', function() {
+    const classSelect = document.getElementById('classSelect');
+    const subjectsContainer = document.getElementById('subjectsContainer');
+    const subjectsPlaceholder = document.getElementById('subjectsPlaceholder');
+    const subjectsHidden = document.getElementById('subjectsHidden');
+    const subjectsError = document.getElementById('subjectsError');
+    const subSubjectDiv = document.getElementById('subSubjectDiv');
+    const subSubjectSelect = document.getElementById('subSubjectSelect');
+    const examTypeSelect = document.getElementById('examTypeSelect');
+    const customExamTypeDiv = document.getElementById('customExamTypeDiv');
+    const customExamTypeInput = document.getElementById('customExamTypeInput');
+    const chaptersContainer = document.getElementById('chaptersContainer');
+    const chaptersPlaceholder = document.getElementById('chaptersPlaceholder');
+    const chaptersHidden = document.getElementById('chaptersHidden');
+    const chaptersError = document.getElementById('chaptersError');
+    const form = document.getElementById('examPatternForm');
+    const resultDiv = document.getElementById('resultMessage');
 
-        // Show feedback message
-        function showFeedback(message, type = 'success') {
-            resultMessage.innerHTML = `
-                <div class="alert alert-${type} alert-dismissible fade show" role="alert">
-                    ${message}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>`;
-            setTimeout(() => resultMessage.innerHTML = '', 5000);
+    // Define loadSubjects function
+    function loadSubjects(classLevel) {
+        if (!classLevel) {
+            subjectsContainer.innerHTML = '';
+            subjectsPlaceholder.classList.remove('hidden');
+            subjectsHidden.value = '';
+            subSubjectDiv.style.display = 'none';
+            subSubjectSelect.disabled = true;
+            return;
         }
-
-        // Load chapters for a specific class
-        async function loadChapters(classLevel) {
-            if (!classLevel) {
-                chaptersContainer.innerHTML = `
-                    <div class="alert alert-info">
-                        <i class="fas fa-info-circle me-2"></i>Select a class to load available chapters
-                    </div>`;
-                return;
-            }
-            chaptersContainer.innerHTML = `
-                <div class="text-center py-4">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                    <p class="mt-2">Loading chapters...</p>
-                </div>`;
-            try {
-                const response = await fetch(`/get_chapters/${classLevel}`);
-                if (!response.ok) throw new Error(`Failed to load chapters (Status: ${response.status})`);
-                const chapters = await response.json();
-                if (chapters.length > 0) {
-                    let html = `<div class="chapter-list">`;
-                    chapters.forEach(chapter => {
-                        html += `
-                            <div class="form-check chapter-item">
-                                <input class="form-check-input" type="checkbox" name="chapters" 
-                                       value="${chapter}" id="chapter_${chapter.replace(/\s+/g, '_')}">
-                                <label class="form-check-label" for="chapter_${chapter.replace(/\s+/g, '_')}">${chapter}</label>
-                            </div>`;
-                    });
-                    html += `</div>`;
-                    chaptersContainer.innerHTML = html;
-                } else {
-                    chaptersContainer.innerHTML = `
-                        <div class="alert alert-warning">
-                            <i class="fas fa-exclamation-triangle me-2"></i>
-                            No chapters found for this class. Please upload content first or add custom chapters.
-                        </div>`;
-                }
-            } catch (error) {
-                console.error('Error loading chapters:', error);
-                showFeedback(`Failed to load chapters: ${error.message}`, 'danger');
-            }
-        }
-
-        // Class dropdown change handler
-        classSelect.addEventListener('change', () => loadChapters(classSelect.value));
-
-        // Exam type dropdown change handler
-        examTypeSelect.addEventListener('change', () => {
-            examTypeOtherOption.style.display = examTypeSelect.value === 'other' ? 'block' : 'none';
-            const customInput = examTypeOtherOption.querySelector('input');
-            customInput.required = examTypeSelect.value === 'other';
-            if (!customInput.required) customInput.value = '';
-        });
-
-        // Add custom chapter button
-        addChapterBtn.addEventListener('click', () => {
-            customChapterOption.style.display = 'block';
-        });
-
-        // Save custom chapter button
-        saveChapterBtn.addEventListener('click', () => {
-            const chapterName = document.querySelector('input[name="custom_chapter"]').value.trim();
-            if (!chapterName) {
-                showFeedback('Custom chapter name is required', 'danger');
-                return;
-            }
-            const newCheckbox = document.createElement('div');
-            newCheckbox.className = 'form-check chapter-item';
-            const uniqueId = `chapter_new_${Date.now()}`;
-            newCheckbox.innerHTML = `
-                <input class="form-check-input" type="checkbox" name="chapters" 
-                       value="${chapterName}" id="${uniqueId}" checked>
-                <label class="form-check-label" for="${uniqueId}">${chapterName}</label>
-            `;
-            const chapterList = chaptersContainer.querySelector('.chapter-list');
-            if (chapterList) {
-                chapterList.appendChild(newCheckbox);
-            } else {
-                chaptersContainer.innerHTML = `<div class="chapter-list">${newCheckbox.outerHTML}</div>`;
-            }
-            document.querySelector('input[name="custom_chapter"]').value = '';
-            customChapterOption.style.display = 'none';
-        });
-
-        // Form submission
-        examPatternForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            submitButtonText.classList.add('d-none');
-            submitButtonSpinner.classList.remove('d-none');
-            submitButton.disabled = true;
-            resultMessage.innerHTML = `
-                <div class="text-center py-2">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Processing...</span>
-                    </div>
-                    <p class="mt-2">Creating exam pattern...</p>
-                </div>`;
-            
-            const formData = new FormData(examPatternForm);
-            const classLevel = formData.get('class');
-            const examType = formData.get('exam_type');
-            const customExamType = formData.get('custom_exam_type');
-            const markingScheme = formData.get('marking_scheme');
-            const chapters = formData.getAll('chapters');
-            const customChapter = formData.get('custom_chapter');
-            const file = fileInput.files[0];
-
-            // Validate inputs
-            if (!classLevel) {
-                showFeedback('Please select a class', 'danger');
-                submitButtonText.classList.remove('d-none');
-                submitButtonSpinner.classList.add('d-none');
-                submitButton.disabled = false;
-                return;
-            }
-            if (!examType) {
-                showFeedback('Please select an exam type', 'danger');
-                submitButtonText.classList.remove('d-none');
-                submitButtonSpinner.classList.add('d-none');
-                submitButton.disabled = false;
-                return;
-            }
-            if (examType === 'other' && !customExamType) {
-                showFeedback('Custom exam type is required', 'danger');
-                submitButtonText.classList.remove('d-none');
-                submitButtonSpinner.classList.add('d-none');
-                submitButton.disabled = false;
-                return;
-            }
-            if (!markingScheme) {
-                showFeedback('Marking scheme is required', 'danger');
-                submitButtonText.classList.remove('d-none');
-                submitButtonSpinner.classList.add('d-none');
-                submitButton.disabled = false;
-                return;
-            }
-            if (!chapters.length && !customChapter) {
-                showFeedback('Please select at least one chapter', 'danger');
-                submitButtonText.classList.remove('d-none');
-                submitButtonSpinner.classList.add('d-none');
-                submitButton.disabled = false;
-                return;
-            }
-            if (file) {
-                const ext = file.name.split('.').pop().toLowerCase();
-                if (!['pdf', 'doc', 'docx'].includes(ext)) {
-                    showFeedback('Unsupported file type. Allowed: PDF, DOC, DOCX', 'danger');
-                    submitButtonText.classList.remove('d-none');
-                    submitButtonSpinner.classList.add('d-none');
-                    submitButton.disabled = false;
-                    return;
-                }
-                if (file.size > 10 * 1024 * 1024) {
-                    showFeedback('File size exceeds 10MB limit', 'danger');
-                    submitButtonText.classList.remove('d-none');
-                    submitButtonSpinner.classList.add('d-none');
-                    submitButton.disabled = false;
-                    return;
-                }
-            }
-            
-            try {
-                const response = await fetch('/create_exam_pattern', {
-                    method: 'POST',
-                    body: formData
-                });
-                if (!response.ok) throw new Error(`Server error: Status ${response.status}`);
-                const data = await response.json();
+        fetch(`/get_subjects/${classLevel}`)
+            .then(response => response.json())
+            .then(data => {
                 if (data.error) {
-                    showFeedback(data.error, 'danger');
-                } else {
-                    showFeedback(data.message, 'success');
-                    examPatternForm.reset();
-                    fileInput.value = ''; // Explicitly clear file input
-                    examTypeOtherOption.style.display = 'none';
-                    customChapterOption.style.display = 'none';
-                    chaptersContainer.innerHTML = `
-                        <div class="alert alert-info">
-                            <i class="fas fa-info-circle me-2"></i>Select a class to load available chapters
-                        </div>`;
+                    resultDiv.innerHTML = `<div class="alert alert-danger">❌ ${data.error}</div>`;
+                    subjectsContainer.innerHTML = '';
+                    subjectsPlaceholder.textContent = 'Error loading subjects';
+                    subjectsPlaceholder.classList.remove('hidden');
+                    return;
                 }
-            } catch (error) {
-                console.error('Error creating exam pattern:', error);
-                showFeedback(`Failed to create exam pattern: ${error.message}`, 'danger');
-            } finally {
-                submitButtonText.classList.remove('d-none');
-                submitButtonSpinner.classList.add('d-none');
-                submitButton.disabled = false;
-            }
-        });
+                subjectsContainer.innerHTML = '';
+                subjectsPlaceholder.classList.add('hidden');
+                data.forEach(subject => {
+                    const div = document.createElement('div');
+                    div.className = 'flex items-center mb-2';
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.name = 'subjects[]';
+                    checkbox.value = subject;
+                    checkbox.id = `subject_${subject.replace(/\s/g, '_')}`;
+                    checkbox.className = 'h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded';
+                    const label = document.createElement('label');
+                    label.htmlFor = checkbox.id;
+                    label.className = 'ml-2 text-sm text-gray-700';
+                    label.textContent = subject;
+                    div.appendChild(checkbox);
+                    div.appendChild(label);
+                    subjectsContainer.appendChild(div);
+                });
+            })
+            .catch(error => {
+                console.error('Error loading subjects:', error);
+                resultDiv.innerHTML = `<div class="alert alert-danger">❌ Error loading subjects: ${error.message}</div>`;
+                subjectsContainer.innerHTML = '';
+                subjectsPlaceholder.textContent = 'Error loading subjects';
+                subjectsPlaceholder.classList.remove('hidden');
+            });
+    }
+
+    // Define loadSubSubjects function
+    function loadSubSubjects(subject) {
+        const classLevel = classSelect.value;
+        subSubjectDiv.style.display = 'none';
+        subSubjectSelect.innerHTML = '<option value="">Select Sub-Subject</option>';
+        subSubjectSelect.disabled = true;
+        if (subject.includes('Social Studies') || subject.includes('Science')) {
+            fetch(`/get_sub_subjects/${classLevel}/${subject}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        resultDiv.innerHTML = `<div class="alert alert-danger">❌ ${data.error}</div>`;
+                        subSubjectSelect.innerHTML = '<option value="">Error loading sub-subjects</option>';
+                        return;
+                    }
+                    if (data.length === 0) {
+                        subSubjectSelect.innerHTML = '<option value="">No sub-subjects available</option>';
+                        return;
+                    }
+                    subSubjectDiv.style.display = 'block';
+                    data.forEach(subSubject => {
+                        const option = document.createElement('option');
+                        option.value = subSubject;
+                        option.textContent = subSubject;
+                        subSubjectSelect.appendChild(option);
+                    });
+                    subSubjectSelect.disabled = false;
+                })
+                .catch(error => {
+                    console.error('Error loading sub-subjects:', error);
+                    resultDiv.innerHTML = `<div class="alert alert-danger">❌ Error loading sub-subjects: ${error.message}</div>`;
+                    subSubjectSelect.innerHTML = '<option value="">Error loading sub-subjects</option>';
+                });
+        }
+    }
+
+    // Define loadChapters function
+    function loadChapters(classLevel, subjects, subSubject = '') {
+        chaptersContainer.innerHTML = '';
+        chaptersPlaceholder.classList.remove('hidden');
+        chaptersHidden.value = '';
+        if (classLevel && subjects.length > 0) {
+            chaptersContainer.innerHTML = '';
+            chaptersPlaceholder.classList.add('hidden');
+            subjects.forEach(subject => {
+                const url = subSubject && (subject === 'Social Studies' || subject === 'Science') ? `/get_chapters/${classLevel}/${subject}/${subSubject}` : `/get_chapters/${classLevel}/${subject}`;
+                fetch(url)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.error) {
+                            resultDiv.innerHTML = `<div class="alert alert-danger">❌ ${data.error}</div>`;
+                            return;
+                        }
+                        if (data.length === 0) {
+                            return;
+                        }
+                        data.forEach(chapter => {
+                            const div = document.createElement('div');
+                            div.className = 'flex items-center mb-2';
+                            const checkbox = document.createElement('input');
+                            checkbox.type = 'checkbox';
+                            checkbox.name = 'chapters[]';
+                            checkbox.value = `${subject}:${chapter}`;
+                            checkbox.id = `chapter_${subject.replace(/\s/g, '_')}_${chapter.replace(/\s/g, '_')}`;
+                            checkbox.className = 'h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded';
+                            const label = document.createElement('label');
+                            label.htmlFor = checkbox.id;
+                            label.className = 'ml-2 text-sm text-gray-700';
+                            label.textContent = `${subject} - ${chapter}`;
+                            div.appendChild(checkbox);
+                            div.appendChild(label);
+                            chaptersContainer.appendChild(div);
+                        });
+                    })
+                    .catch(error => {
+                        console.error('Error loading chapters:', error);
+                        resultDiv.innerHTML = `<div class="alert alert-danger">❌ Error loading chapters: ${error.message}</div>`;
+                    });
+            });
+        }
+    }
+
+    // Load subjects when class is selected
+    classSelect.addEventListener('change', function() {
+        const classLevel = this.value;
+        loadSubjects(classLevel);
+        subSubjectDiv.style.display = 'none';
+        subSubjectSelect.disabled = true;
+        chaptersContainer.innerHTML = '';
+        chaptersPlaceholder.classList.remove('hidden');
+        chaptersHidden.value = '';
+        subjectsHidden.value = '';
     });
+
+    // Update hidden input with selected subjects and load sub-subjects/chapters
+    subjectsContainer.addEventListener('change', function(e) {
+        if (e.target.type === 'checkbox') {
+            const selectedSubjects = Array.from(subjectsContainer.querySelectorAll('input[type="checkbox"]:checked'))
+                .map(checkbox => checkbox.value);
+            subjectsHidden.value = selectedSubjects.join(',');
+            subjectsError.classList.add('hidden');
+            subSubjectDiv.style.display = 'none';
+            subSubjectSelect.disabled = true;
+            chaptersContainer.innerHTML = '';
+            chaptersPlaceholder.classList.remove('hidden');
+            chaptersHidden.value = '';
+            if (selectedSubjects.length === 1) {
+                loadSubSubjects(selectedSubjects[0]);
+                loadChapters(classSelect.value, selectedSubjects);
+            } else if (selectedSubjects.length > 0) {
+                loadChapters(classSelect.value, selectedSubjects);
+            }
+        }
+    });
+
+    // Load chapters when sub-subject is selected
+    subSubjectSelect.addEventListener('change', function() {
+        const classLevel = classSelect.value;
+        const selectedSubjects = subjectsHidden.value.split(',').filter(s => s);
+        const subSubject = this.value;
+        if (selectedSubjects.length === 1) {
+            loadChapters(classLevel, selectedSubjects, subSubject);
+        }
+    });
+
+    // Show/hide custom exam type input
+    examTypeSelect.addEventListener('change', function() {
+        if (this.value === 'other') {
+            customExamTypeDiv.style.display = 'block';
+            customExamTypeInput.setAttribute('required', 'true');
+        } else {
+            customExamTypeDiv.style.display = 'none';
+            customExamTypeInput.removeAttribute('required');
+            customExamTypeInput.value = '';
+        }
+    });
+
+    // Update hidden input with selected chapters
+    chaptersContainer.addEventListener('change', function(e) {
+        if (e.target.type === 'checkbox') {
+            const selectedChapters = Array.from(chaptersContainer.querySelectorAll('input[type="checkbox"]:checked'))
+                .map(checkbox => checkbox.value);
+            chaptersHidden.value = selectedChapters.join(',');
+            chaptersError.classList.add('hidden');
+        }
+    });
+
+    // Handle form submission with processing feedback
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        console.log("🔥 Exam pattern form submitted");
+        const selectedSubjects = subjectsHidden.value;
+        const selectedChapters = chaptersHidden.value;
+        if (!selectedSubjects) {
+            subjectsError.classList.remove('hidden');
+            return;
+        }
+        if (!selectedChapters) {
+            chaptersError.classList.remove('hidden');
+            return;
+        }
+        const formData = new FormData(this);
+        resultDiv.innerHTML = `
+            <div class="text-center py-2">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Processing...</span>
+                </div>
+                <p class="mt-2">Processing your exam pattern...</p>
+            </div>`;
+        fetch('/create_exam_pattern', {
+            method: 'POST',
+            body: formData
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    resultDiv.innerHTML = `<div class="alert alert-danger">❌ ${data.error}</div>`;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle me-2"></i>✅ ${data.message}
+                        </div>`;
+                    const selectedClass = classSelect.value;
+                    this.reset();
+                    classSelect.value = selectedClass;
+                    subjectsContainer.innerHTML = '';
+                    subjectsPlaceholder.classList.remove('hidden');
+                    subjectsHidden.value = '';
+                    subSubjectDiv.style.display = 'none';
+                    subSubjectSelect.disabled = true;
+                    chaptersContainer.innerHTML = '';
+                    chaptersPlaceholder.classList.remove('hidden');
+                    chaptersHidden.value = '';
+                    if (selectedClass) {
+                        loadSubjects(selectedClass);
+                    }
+                    customExamTypeDiv.style.display = 'none';
+                    customExamTypeInput.removeAttribute('required');
+                    setTimeout(() => {
+                        window.location.href = '/admin_dashboard';
+                    }, 2000);
+                }
+            })
+            .catch(error => {
+                console.error("Error creating exam pattern:", error);
+                resultDiv.innerHTML = `<div class="alert alert-danger">❌ Error: ${error.message}</div>`;
+            });
+    });
+
+    // Load subjects if a class is pre-selected
+    if (classSelect.value) {
+        loadSubjects(classSelect.value);
+    }
+});
 </script>
 {% endblock %}

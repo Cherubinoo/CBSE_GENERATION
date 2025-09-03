@@ -1,0 +1,21 @@
+# Python-specific
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+
+# Directories to ignore
+en_PP-OCRv3_rec/
+model_cache/
+models/
+processed/
+text_embeddings/
+uploads/
+static/uploads/
+static/outputs/
+
+# Other common exclusions
+*.log
+*.tmp
+*.bak

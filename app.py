@@ -8,10 +8,12 @@ import mysql.connector
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
-from paddleocr import PaddleOCR
-from docx import Document
-from convert import extract_text_from_pdf
+from bson.objectid import ObjectId
+from utils import extract_text_from_file
 from store import store_to_mongo
+from generate_exam_pattern import generate_exam_pattern
+from store_exam_pattern import store_exam_pattern_to_mongo
+from question_generator import generate_question_paper
 
 # Load environment variables
 load_dotenv()
@@ -41,83 +43,15 @@ mysql_config = {
 def get_db_connection():
     return mysql.connector.connect(**mysql_config)
 
-# MongoDB Connections (only for question_generator)
+# MongoDB Connections
 mongo_client = MongoClient('mongodb://localhost:27017/')
 mongo_question_db = mongo_client['question_generator']
 
-# Initialize PaddleOCR
-try:
-    ocr = PaddleOCR(lang='en', use_angle_cls=False, use_gpu=False, show_log=False)
-except Exception as e:
-    logger.error(f"Failed to initialize PaddleOCR: {str(e)}")
-    ocr = None
-
-# Text extraction
-def extract_text_from_file(filepath):
-    """
-    Extract text from various file types (PDF, images, TXT, DOC/DOCX).
-    Returns extracted text as a string or None if extraction fails.
-    """
-    try:
-        ext = filepath.rsplit('.', 1)[-1].lower()
-        logger.info(f"Extracting text from file: {filepath}, type: {ext}")
-        if ext == 'pdf':
-            text = extract_text_from_pdf(filepath)
-            if text:
-                logger.info(f"Extracted text from PDF (length: {len(text)})")
-            else:
-                logger.warning("No text extracted from PDF")
-            return text
-        elif ext in ('png', 'jpg', 'jpeg'):
-            try:
-                result = ocr.ocr(filepath) if ocr else None
-                if not result or not result[0]:
-                    logger.info("No text detected by OCR in image")
-                    return None
-                page_text_lines = []
-                if isinstance(result[0], list):
-                    for line in result[0]:
-                        if isinstance(line, list) and len(line) > 1 and isinstance(line[1], tuple):
-                            page_text_lines.append(line[1][0])
-                text = "\n".join(page_text_lines) if page_text_lines else None
-                if text:
-                    logger.info(f"Extracted text from image (length: {len(text)})")
-                else:
-                    logger.warning("No text extracted from image")
-                return text
-            except Exception as e:
-                logger.error(f"Image OCR failed: {e}")
-                return None
-        elif ext == 'txt':
-            try:
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    text = f.read()
-                if text.strip():
-                    logger.info(f"Extracted text from TXT (length: {len(text)})")
-                    return text
-                logger.warning("No text extracted from TXT")
-                return None
-            except Exception as e:
-                logger.error(f"TXT file read failed: {e}")
-                return None
-        elif ext in ('doc', 'docx'):
-            try:
-                doc = Document(filepath)
-                text = "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
-                if text.strip():
-                    logger.info(f"Extracted text from DOC/DOCX (length: {len(text)})")
-                    return text
-                logger.warning("No text extracted from DOC/DOCX")
-                return None
-            except Exception as e:
-                logger.error(f"DOC/DOCX file read failed for {filepath}: {e}")
-                return None
-        else:
-            logger.warning(f"Unsupported file type: {ext}")
-            return None
-    except Exception as e:
-        logger.error(f"Text extraction failed for {filepath}: {e}")
-        return None
+# Sub-subject mapping
+SUB_SUBJECTS = {
+    'Social Studies': ['Economics', 'Geography', 'History', 'Civics'],
+    'Science': ['Physics', 'Chemistry', 'Biology']
+}
 
 # Initialize default admin
 def ensure_default_admin():
@@ -146,10 +80,10 @@ def ensure_default_subjects():
         '6': ['English', 'Mathematics', 'Science', 'Social Studies', 'Hindi'],
         '7': ['English', 'Mathematics', 'Science', 'Social Studies', 'Hindi'],
         '8': ['English', 'Mathematics', 'Science', 'Social Studies', 'Hindi'],
-        '9': ['English', 'Mathematics', 'Physics', 'Chemistry', 'Biology', 'History', 'Geography', 'Civics'],
-        '10': ['English', 'Mathematics', 'Physics', 'Chemistry', 'Biology', 'History', 'Geography', 'Civics'],
-        '11': ['English', 'Mathematics', 'Physics', 'Chemistry', 'Biology', 'Computer Science', 'Economics', 'Accountancy', 'Business Studies'],
-        '12': ['English', 'Mathematics', 'Physics', 'Chemistry', 'Biology', 'Computer Science', 'Economics', 'Accountancy', 'Business Studies']
+        '9': ['English', 'Mathematics', 'Science', 'Social Studies'],
+        '10': ['English', 'Mathematics', 'Science', 'Social Studies'],
+        '11': ['English', 'Mathematics', 'Science', 'Social Studies', 'Computer Science', 'Economics', 'Accountancy', 'Business Studies'],
+        '12': ['English', 'Mathematics', 'Science', 'Social Studies', 'Computer Science', 'Economics', 'Accountancy', 'Business Studies']
     }
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -219,11 +153,73 @@ def ensure_content_table():
                 resource_type VARCHAR(100) NOT NULL,
                 filename VARCHAR(255) NOT NULL,
                 filepath VARCHAR(255) NOT NULL,
+                mongo_id VARCHAR(24),
+                sub_subject VARCHAR(100),
                 INDEX idx_class_subject (class, subject)
             )
         """)
         conn.commit()
         logger.info("Created content table in education_db")
+    else:
+        cursor.execute("SHOW COLUMNS FROM content LIKE 'mongo_id'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE content ADD mongo_id VARCHAR(24) AFTER filepath")
+            conn.commit()
+            logger.info("Added mongo_id column to content table")
+        cursor.execute("SHOW COLUMNS FROM content LIKE 'sub_subject'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE content ADD sub_subject VARCHAR(100) AFTER mongo_id")
+            conn.commit()
+            logger.info("Added sub_subject column to content table")
+    cursor.close()
+    conn.close()
+
+# Initialize exam_patterns table
+def ensure_exam_patterns_table():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SHOW TABLES LIKE 'exam_patterns'")
+    if not cursor.fetchone():
+        cursor.execute("""
+            CREATE TABLE exam_patterns (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                class_level VARCHAR(10) NOT NULL,
+                subject VARCHAR(100),
+                subjects TEXT,
+                sub_subject VARCHAR(100),
+                chapters TEXT,
+                chapter_addresses TEXT,
+                filename VARCHAR(255),
+                filepath VARCHAR(255),
+                mongo_id VARCHAR(24),
+                chapter_mongo_ids TEXT,
+                INDEX idx_class_subject (class_level, subject)
+            )
+        """)
+        conn.commit()
+        logger.info("Created exam_patterns table in education_db")
+    else:
+        cursor.execute("SHOW COLUMNS FROM exam_patterns LIKE 'subjects'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE exam_patterns ADD subjects TEXT AFTER subject")
+            conn.commit()
+            logger.info("Added subjects column to exam_patterns table")
+        cursor.execute("SHOW COLUMNS FROM exam_patterns LIKE 'chapter_addresses'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE exam_patterns ADD chapter_addresses TEXT AFTER chapters")
+            conn.commit()
+            logger.info("Added chapter_addresses column to exam_patterns table")
+        cursor.execute("SHOW COLUMNS FROM exam_patterns LIKE 'mongo_id'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE exam_patterns ADD mongo_id VARCHAR(24) AFTER filepath")
+            conn.commit()
+            logger.info("Added mongo_id column to exam_patterns table")
+        cursor.execute("SHOW COLUMNS FROM exam_patterns LIKE 'chapter_mongo_ids'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE exam_patterns ADD chapter_mongo_ids TEXT AFTER mongo_id")
+            conn.commit()
+            logger.info("Added chapter_mongo_ids column to exam_patterns table")
     cursor.close()
     conn.close()
 
@@ -277,6 +273,7 @@ ensure_default_subjects()
 ensure_default_exam_types()
 ensure_default_resource_types()
 ensure_content_table()
+ensure_exam_patterns_table()
 ensure_staff_table()
 ensure_default_staff()
 
@@ -341,30 +338,46 @@ def upload_content_post():
         if ext not in app.config['ALLOWED_EXTENSIONS']:
             logger.warning(f"Unsupported file type: {ext}")
             return jsonify({'error': 'Unsupported file type'}), 400
-        # Validate required fields
         required_fields = ['class', 'subject', 'resource_type', 'book_name']
         for field in required_fields:
             if not form_data.get(field):
                 logger.warning(f"Missing required field: {field}")
                 return jsonify({'error': f'{field.replace("_", " ").title()} is required'}), 400
-        # Verify content table schema
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SHOW COLUMNS FROM content LIKE 'book_name'")
-        if not cursor.fetchone():
-            cursor.close()
-            conn.close()
-            logger.error("Schema error: 'book_name' column missing in content table")
-            return jsonify({'error': 'Database schema error: book_name column missing'}), 500
         filename = f"{uuid.uuid4().hex}_{secure_filename(file.filename)}"
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
         logger.info(f"File saved: {filepath}")
-        # Store in MySQL
+        text = extract_text_from_file(filepath)
+        if text is None:
+            logger.warning(f"Failed to extract text from {filepath}. Using empty string.")
+            text = ""
+        collection_name = f"class{form_data.get('class')}_{form_data.get('subject').lower().replace(' ', '_')}"
+        metadata = {
+            "class": form_data.get('class', ''),
+            "subject": form_data.get('subject', ''),
+            "book": form_data.get('book_name', 'Unknown'),
+            "chapter": form_data.get('chapter', 'Unknown'),
+            "chapter_type": form_data.get('resource_type', 'Unknown'),
+            "filename": filename,
+            "sub_subject": form_data.get('sub_subject', '')
+        }
+        mongo_result = store_to_mongo(metadata, text, None, collection_name=collection_name)
+        mongo_id = None
+        if isinstance(mongo_result, bool):
+            logger.warning(f"Legacy store_to_mongo returned boolean: {mongo_result}. Expected dictionary with 'success' and 'document_id'. Setting mongo_id to NULL.")
+            if not mongo_result:
+                logger.warning(f"Failed to store content in MongoDB: filename={filename}, collection={collection_name}")
+        elif not mongo_result.get('success'):
+            logger.warning(f"Failed to store content in MongoDB: filename={filename}, collection={collection_name}, error={mongo_result.get('error', 'Unknown error')}")
+        else:
+            mongo_id = mongo_result.get('document_id')
+            logger.info(f"Successfully stored content in MongoDB: filename={filename}, collection={collection_name}, mongo_id={mongo_id}")
+        conn = get_db_connection()
+        cursor = conn.cursor()
         cursor.execute(
             """
-            INSERT INTO content (class, subject, book_name, chapter, resource_type, filename, filepath)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO content (class, subject, book_name, chapter, resource_type, filename, filepath, mongo_id, sub_subject)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 form_data.get('class'),
@@ -373,31 +386,21 @@ def upload_content_post():
                 form_data.get('chapter'),
                 form_data.get('resource_type'),
                 filename,
-                filepath
+                filepath,
+                mongo_id,
+                form_data.get('sub_subject')
             )
         )
         conn.commit()
         content_id = cursor.lastrowid
         cursor.close()
         conn.close()
-        logger.info(f"Content uploaded to MySQL: ID={content_id}, filename={filename}")
-        # Extract text and store in MongoDB
-        text = extract_text_from_file(filepath)
-        metadata = {
-            "class": form_data.get('class', ''),
-            "subject": form_data.get('subject', ''),
-            "book": form_data.get('book_name', 'Unknown'),
-            "chapter": form_data.get('chapter', 'Unknown'),
-            "chapter_type": form_data.get('resource_type', 'Unknown'),
-            "filename": filename
-        }
-        collection_name = f"class{form_data.get('class')}_{form_data.get('subject').lower().replace(' ', '_')}"
-        if store_to_mongo(metadata, text, None, collection_name=collection_name):
-            logger.info(f"Successfully stored content in MongoDB: filename={filename}, collection={collection_name}")
-        else:
-            logger.warning(f"Failed to store content in MongoDB: filename={filename}, collection={collection_name}")
+        logger.info(f"Content uploaded to MySQL: ID={content_id}, filename={filename}, mongo_id={mongo_id}")
         return jsonify({
-            'message': 'Content uploaded successfully!'
+            'message': 'Content uploaded successfully!',
+            'content_id': content_id,
+            'filename': filename,
+            'mongo_id': mongo_id
         })
     except mysql.connector.errors.ProgrammingError as e:
         logger.exception('Database error during content upload')
@@ -424,6 +427,37 @@ def get_book_names(class_level, subject):
         logger.exception(f"Error retrieving book names for class {class_level}, subject {subject}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/get_sub_subjects/<class_level>/<subject>')
+def get_sub_subjects(class_level, subject):
+    try:
+        sub_subjects = SUB_SUBJECTS.get(subject, [])
+        logger.info(f"Retrieved sub-subjects for class {class_level}, subject {subject}: {sub_subjects}")
+        return jsonify(sub_subjects)
+    except Exception as e:
+        logger.exception(f"Error retrieving sub-subjects for class {class_level}, subject {subject}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/get_chapters/<class_level>/<subject>')
+@app.route('/get_chapters/<class_level>/<subject>/<sub_subject>')
+def get_chapters(class_level, subject, sub_subject=None):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        query = "SELECT DISTINCT chapter FROM content WHERE class = %s AND subject = %s AND chapter IS NOT NULL"
+        params = [class_level, subject]
+        if sub_subject:
+            query += " AND sub_subject = %s"
+            params.append(sub_subject)
+        cursor.execute(query, params)
+        chapters = [row[0] for row in cursor.fetchall()]
+        cursor.close()
+        conn.close()
+        logger.info(f"Retrieved chapters for class {class_level}, subject {subject}, sub_subject {sub_subject or 'none'}: {chapters}")
+        return jsonify(chapters)
+    except Exception as e:
+        logger.exception(f"Error retrieving chapters for class {class_level}, subject {sub_subject or 'none'}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/view_uploaded_content', methods=['GET', 'POST'])
 def view_uploaded_content():
     if 'admin' not in session:
@@ -444,7 +478,7 @@ def view_uploaded_content():
             selected_book_name = request.form.get('book_name')
             if selected_class and selected_subject:
                 query = """
-                    SELECT id, class, subject, book_name, chapter, resource_type, filename
+                    SELECT id, class, subject, book_name, chapter, resource_type, filename, sub_subject, mongo_id
                     FROM content
                     WHERE class = %s AND subject = %s
                 """
@@ -478,7 +512,7 @@ def edit_uploaded_content_get(content_id):
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute(
-            "SELECT id, class, subject, book_name, chapter, resource_type, filename, filepath FROM content WHERE id = %s",
+            "SELECT id, class, subject, book_name, chapter, resource_type, filename, filepath, sub_subject, mongo_id FROM content WHERE id = %s",
             (content_id,)
         )
         content = cursor.fetchone()
@@ -507,7 +541,6 @@ def edit_uploaded_content_post(content_id):
         logger.info(f"Form data received for editing content ID={content_id}: {form_data}")
         file = request.files.get('file')
         clear_file = form_data.get('clear_file') == 'on'
-        # Validate required fields
         required_fields = ['class', 'subject', 'book_name', 'resource_type']
         for field in required_fields:
             if not form_data.get(field):
@@ -515,7 +548,7 @@ def edit_uploaded_content_post(content_id):
                 return jsonify({'error': f'{field.replace("_", " ").title()} is required'}), 400
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT filename, filepath, class, subject FROM content WHERE id = %s", (content_id,))
+        cursor.execute("SELECT filename, filepath, class, subject, mongo_id FROM content WHERE id = %s", (content_id,))
         content = cursor.fetchone()
         if not content:
             cursor.close()
@@ -524,13 +557,16 @@ def edit_uploaded_content_post(content_id):
             return jsonify({'error': 'Content not found'}), 404
         old_filepath = content['filepath']
         old_filename = content['filename']
+        old_mongo_id = content['mongo_id']
         old_collection_name = f"class{content['class']}_{content['subject'].lower().replace(' ', '_')}"
         new_collection_name = f"class{form_data.get('class')}_{form_data.get('subject').lower().replace(' ', '_')}"
         filename = old_filename
         filepath = old_filepath
+        mongo_id = old_mongo_id
         if clear_file:
             filename = None
             filepath = None
+            mongo_id = None
             logger.info(f"Clearing existing file for content ID={content_id}")
         elif file and file.filename:
             ext = file.filename.rsplit('.', 1)[-1].lower()
@@ -544,11 +580,30 @@ def edit_uploaded_content_post(content_id):
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             file.save(filepath)
             logger.info(f"New file saved: {filepath}")
-        # Update MySQL
+            text = extract_text_from_file(filepath) if filepath else None
+            metadata = {
+                "class": form_data.get('class', ''),
+                "subject": form_data.get('subject', ''),
+                "book": form_data.get('book_name', 'Unknown'),
+                "chapter": form_data.get('chapter', 'Unknown'),
+                "chapter_type": form_data.get('resource_type', 'Unknown'),
+                "filename": filename,
+                "sub_subject": form_data.get('sub_subject', '')
+            }
+            mongo_result = store_to_mongo(metadata, text, None, collection_name=new_collection_name)
+            if isinstance(mongo_result, bool):
+                logger.warning(f"Legacy store_to_mongo returned boolean: {mongo_result}. Expected dictionary with 'success' and 'document_id'. Setting mongo_id to NULL.")
+                if not mongo_result:
+                    logger.warning(f"Failed to update content in MongoDB: filename={filename}, collection={new_collection_name}")
+            elif not mongo_result.get('success'):
+                logger.warning(f"Failed to update content in MongoDB: filename={filename}, collection={new_collection_name}, error={mongo_result.get('error', 'Unknown error')}")
+            else:
+                mongo_id = mongo_result.get('document_id')
+                logger.info(f"Successfully updated content in MongoDB: filename={filename}, collection={new_collection_name}, mongo_id={mongo_id}")
         cursor.execute(
             """
             UPDATE content
-            SET class = %s, subject = %s, book_name = %s, chapter = %s, resource_type = %s, filename = %s, filepath = %s
+            SET class = %s, subject = %s, book_name = %s, chapter = %s, resource_type = %s, filename = %s, filepath = %s, mongo_id = %s, sub_subject = %s
             WHERE id = %s
             """,
             (
@@ -559,37 +614,27 @@ def edit_uploaded_content_post(content_id):
                 form_data.get('resource_type'),
                 filename,
                 filepath,
+                mongo_id,
+                form_data.get('sub_subject'),
                 content_id
             )
         )
         conn.commit()
         cursor.close()
         conn.close()
-        # Update MongoDB
-        collection = mongo_question_db[new_collection_name]
-        mongo_question_db[old_collection_name].delete_one({'filename': old_filename})
-        if filename:
-            text = extract_text_from_file(filepath) if filepath else None
-            metadata = {
-                "class": form_data.get('class', ''),
-                "subject": form_data.get('subject', ''),
-                "book": form_data.get('book_name', 'Unknown'),
-                "chapter": form_data.get('chapter', 'Unknown'),
-                "chapter_type": form_data.get('resource_type', 'Unknown'),
-                "filename": filename
-            }
-            if store_to_mongo(metadata, text, None, collection_name=new_collection_name):
-                logger.info(f"Successfully updated content in MongoDB: filename={filename}, collection={new_collection_name}")
-            else:
-                logger.warning(f"Failed to update content in MongoDB: filename={filename}, collection={new_collection_name}")
-        # Delete old file if replaced or cleared
+        if old_mongo_id and (clear_file or (file and file.filename)):
+            try:
+                mongo_question_db[old_collection_name].delete_one({'_id': ObjectId(old_mongo_id)})
+                logger.info(f"Deleted old MongoDB document: mongo_id={old_mongo_id}, collection={old_collection_name}")
+            except Exception as e:
+                logger.warning(f"Failed to delete old MongoDB document: mongo_id={old_mongo_id}, collection={old_collection_name}, error={str(e)}")
         if old_filepath and (clear_file or (file and file.filename)) and os.path.exists(old_filepath):
             try:
                 os.remove(old_filepath)
                 logger.info(f"Deleted old file: {old_filepath}")
             except Exception as e:
                 logger.warning(f"Failed to delete old file {old_filepath}: {str(e)}")
-        logger.info(f"Content updated: ID={content_id}, filename={filename}")
+        logger.info(f"Content updated: ID={content_id}, filename={filename}, mongo_id={mongo_id}")
         return jsonify({'message': 'Content updated successfully'})
     except Exception as e:
         logger.exception(f"Error editing content: ID={content_id}")
@@ -603,33 +648,28 @@ def delete_uploaded_content(content_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT filename, filepath, class, subject FROM content WHERE id = %s", (content_id,))
+        cursor.execute("SELECT filename, filepath, class, subject, mongo_id FROM content WHERE id = %s", (content_id,))
         content = cursor.fetchone()
         if not content:
             cursor.close()
             conn.close()
             logger.warning(f"Content not found: ID={content_id}")
             return jsonify({'error': 'Content not found'}), 404
-        # Delete from MySQL
         cursor.execute("DELETE FROM content WHERE id = %s", (content_id,))
         conn.commit()
         cursor.close()
         conn.close()
         logger.info(f"Deleted content from MySQL: ID={content_id}, filename={content['filename']}")
-        # Delete from MongoDB
         collection_name = f"class{content['class']}_{content['subject'].lower().replace(' ', '_')}"
-        try:
-            result = mongo_question_db[collection_name].delete_one({'filename': content['filename']})
-            if result.deleted_count > 0:
-                logger.info(f"Deleted content from MongoDB: filename={content['filename']}, collection={collection_name}")
-            else:
-                logger.warning(f"No MongoDB document found for filename={content['filename']} in collection={collection_name}")
-        except ConnectionFailure as e:
-            logger.error(f"MongoDB connection failed during deletion: {e}")
-            return jsonify({'error': f'MongoDB connection failed: {str(e)}'}), 500
-        except Exception as e:
-            logger.error(f"Error deleting from MongoDB: filename={content['filename']}, collection={collection_name}, error={str(e)}")
-        # Delete file from filesystem
+        if content['mongo_id']:
+            try:
+                result = mongo_question_db[collection_name].delete_one({'_id': ObjectId(content['mongo_id'])})
+                if result.deleted_count > 0:
+                    logger.info(f"Deleted content from MongoDB: mongo_id={content['mongo_id']}, collection={collection_name}")
+                else:
+                    logger.warning(f"No MongoDB document found for mongo_id={content['mongo_id']} in collection={collection_name}")
+            except Exception as e:
+                logger.error(f"Error deleting from MongoDB: mongo_id={content['mongo_id']}, collection={collection_name}, error={str(e)}")
         if content['filepath'] and os.path.exists(content['filepath']):
             try:
                 os.remove(content['filepath'])
@@ -696,7 +736,7 @@ def get_exam_patterns(class_level):
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT id, name, class_level FROM exam_patterns WHERE class_level = %s", (class_level,))
+        cursor.execute("SELECT id, name, class_level, subjects, sub_subject FROM exam_patterns WHERE class_level = %s", (class_level,))
         patterns = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -704,6 +744,25 @@ def get_exam_patterns(class_level):
         return jsonify(patterns)
     except Exception as e:
         logger.exception(f"Error retrieving exam patterns for class {class_level}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/get_exam_patterns/<class_level>/<subject>')
+def get_exam_patterns_by_subject(class_level, subject):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT id, name, class_level, subjects, sub_subject
+            FROM exam_patterns
+            WHERE class_level = %s AND (subject = %s OR subjects LIKE %s)
+        """, (class_level, subject, f'%{subject}%'))
+        patterns = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        logger.info(f"Retrieved exam patterns for class {class_level}, subject {subject}: {len(patterns)} patterns")
+        return jsonify(patterns)
+    except Exception as e:
+        logger.exception(f"Error retrieving exam patterns for class {class_level}, subject {subject}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/create_exam_pattern', methods=['GET', 'POST'])
@@ -714,16 +773,17 @@ def create_exam_pattern():
     if request.method == 'POST':
         try:
             class_level = request.form.get('class')
+            subjects = request.form.get('subjects').split(',') if request.form.get('subjects') else []
+            sub_subject = request.form.get('sub_subject')
             exam_type = request.form.get('exam_type')
             custom_exam_type = request.form.get('custom_exam_type')
-            marking_scheme = request.form.get('marking_scheme')
-            chapters = request.form.getlist('chapters')
-            custom_chapter = request.form.get('custom_chapter')
-            logger.info(f"Attempting to create exam pattern: class_level={class_level}, exam_type={exam_type}, chapters={chapters}")
-            if not class_level or not exam_type or not marking_scheme:
-                logger.warning("Missing required fields: class_level, exam_type, or marking_scheme")
-                return jsonify({'error': 'Class, exam type, and marking_scheme are required'}), 400
-            if not chapters and not custom_chapter:
+            chapters = request.form.get('chapters').split(',') if request.form.get('chapters') else []
+            file = request.files.get('file')
+            logger.info(f"Attempting to create exam pattern: class_level={class_level}, subjects={subjects}, sub_subject={sub_subject}, exam_type={exam_type}, chapters={chapters}")
+            if not class_level or not subjects or not exam_type or not file or not file.filename:
+                logger.warning("Missing required fields: class_level, subjects, exam_type, or file")
+                return jsonify({'error': 'Class, at least one subject, exam type, and file are required'}), 400
+            if not chapters:
                 logger.warning("No chapters selected")
                 return jsonify({'error': 'At least one chapter is required'}), 400
             if exam_type == 'other':
@@ -731,42 +791,92 @@ def create_exam_pattern():
                 if not exam_type:
                     logger.warning("Custom exam type not provided")
                     return jsonify({'error': 'Custom exam type is required'}), 400
-            if custom_chapter:
-                chapters.append(custom_chapter)
-            chapters_str = ','.join(chapters)
-            filename = None
-            filepath = None
-            if 'file' in request.files:
-                file = request.files['file']
-                if file and file.filename:
-                    ext = file.filename.rsplit('.', 1)[-1].lower()
-                    if ext not in app.config['ALLOWED_EXTENSIONS']:
-                        logger.warning(f"Unsupported file type: {ext}")
-                        return jsonify({'error': 'Unsupported file type. Allowed: pdf, doc, docx, txt'}), 400
-                    if file.content_length > 10 * 1024 * 1024:
-                        logger.warning("File size exceeds 10MB limit")
-                        return jsonify({'error': 'File size exceeds 10MB limit'}), 400
-                    filename = f"{uuid.uuid4().hex}_{secure_filename(file.filename)}"
-                    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                    file.save(filepath)
-                    logger.info(f"File saved: {filepath}")
+            chapter_addresses = []
+            chapter_mongo_ids = []
             conn = get_db_connection()
-            cursor = conn.cursor()
+            cursor = conn.cursor(dictionary=True)
+            for full_chapter in chapters:
+                full_chapter = full_chapter.strip()
+                if not full_chapter:
+                    continue
+                chap_subject = subjects[0] if subjects else sub_subject or 'unknown'
+                chapter_name = full_chapter
+                if ':' in full_chapter:
+                    chap_subject, chapter_name = full_chapter.split(':', 1)
+                    chap_subject = chap_subject.strip()
+                    chapter_name = chapter_name.strip()
+                collection_name = f"class{class_level}_{chap_subject.lower().replace(' ', '_')}"
+                chapter_addresses.append(collection_name)
+                cursor.execute(
+                    """
+                    SELECT mongo_id FROM content
+                    WHERE class = %s AND subject = %s AND chapter = %s AND mongo_id IS NOT NULL
+                    """,
+                    (class_level, chap_subject, chapter_name)
+                )
+                result = cursor.fetchone()
+                if result and result['mongo_id']:
+                    chapter_mongo_ids.append(result['mongo_id'])
+                else:
+                    logger.warning(f"No MongoDB ID found for chapter: class={class_level}, subject={chap_subject}, chapter={chapter_name}")
+            chapter_addresses_str = ','.join(chapter_addresses)
+            chapter_mongo_ids_str = ','.join(chapter_mongo_ids) if chapter_mongo_ids else None
+            result = generate_exam_pattern(
+                class_level=class_level,
+                subjects=subjects,
+                exam_type=exam_type,
+                chapters=chapters,
+                file=file,
+                upload_folder=app.config['UPLOAD_FOLDER'],
+                allowed_extensions=app.config['ALLOWED_EXTENSIONS']
+            )
+            if not result['success']:
+                logger.warning(f"Exam pattern generation failed: {result['error']}")
+                cursor.close()
+                conn.close()
+                return jsonify({'error': result['error']}), 400
+            filename = result.get('filename')
+            filepath = result.get('filepath')
+            subjects_str = ','.join(subjects)
+            chapters_str = ','.join(chapters)
             cursor.execute(
                 """
-                INSERT INTO exam_patterns (name, description, class_level, chapters, filename, filepath)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO exam_patterns (name, class_level, subject, subjects, sub_subject, chapters, chapter_addresses, filename, filepath, chapter_mongo_ids)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                (exam_type, marking_scheme, class_level, chapters_str, filename, filepath)
+                (exam_type, class_level, subjects[0] if subjects else None, subjects_str, sub_subject, chapters_str, chapter_addresses_str, filename, filepath, chapter_mongo_ids_str)
             )
             conn.commit()
             pattern_id = cursor.lastrowid
+            mongo_result = store_exam_pattern_to_mongo(
+                filepath=filepath,
+                class_level=class_level,
+                subjects=subjects,
+                exam_type=exam_type,
+                chapters=chapters,
+                filename=filename,
+                sub_subject=sub_subject
+            )
+            if not mongo_result['success']:
+                logger.warning(f"Failed to store exam pattern in MongoDB: {mongo_result['error']}")
+            else:
+                logger.info(f"Successfully stored exam pattern in MongoDB: filename={filename}, document_id={mongo_result['document_id']}")
+                cursor.execute(
+                    "UPDATE exam_patterns SET mongo_id = %s WHERE id = %s",
+                    (mongo_result['document_id'], pattern_id)
+                )
+                conn.commit()
+                logger.info(f"Updated MySQL exam_patterns with mongo_id={mongo_result['document_id']} for ID={pattern_id}")
             cursor.close()
             conn.close()
-            logger.info(f"Exam pattern created: ID={pattern_id}, class_level={class_level}, exam_type={exam_type}")
-            return jsonify({'message': 'Exam pattern created successfully', 'pattern_id': pattern_id})
+            logger.info(f"Exam pattern created in MySQL: ID={pattern_id}, class_level={class_level}, subjects={subjects_str}, exam_type={exam_type}")
+            return jsonify({'message': f'Exam pattern created successfully! Document ID: {mongo_result.get("document_id", "N/A")}', 'pattern_id': pattern_id})
         except Exception as e:
             logger.exception('Error creating exam pattern')
+            if 'cursor' in locals():
+                cursor.close()
+            if 'conn' in locals():
+                conn.close()
             return jsonify({'error': str(e)}), 500
     return render_template('create_exam_pattern.html')
 
@@ -787,8 +897,9 @@ def edit_exam_pattern_details(pattern_id):
         cursor = conn.cursor(dictionary=True)
         cursor.execute(
             """
-            SELECT id, name, description, class_level, chapters, filename
-            FROM exam_patterns WHERE id = %s
+            SELECT id, name, class_level, subject, subjects, sub_subject, chapters, filename
+            FROM exam_patterns
+            WHERE id = %s
             """,
             (pattern_id,)
         )
@@ -798,6 +909,7 @@ def edit_exam_pattern_details(pattern_id):
         if not pattern:
             logger.warning(f"Exam pattern not found: ID={pattern_id}")
             return jsonify({'error': 'Exam pattern not found'}), 404
+        pattern['subjects'] = pattern['subjects'].split(',') if pattern['subjects'] else [pattern['subject']] if pattern['subject'] else []
         pattern['chapters'] = pattern['chapters'].split(',') if pattern['chapters'] else []
         logger.info(f"Retrieved exam pattern details: ID={pattern_id}, name={pattern['name']}")
         return jsonify(pattern)
@@ -812,17 +924,18 @@ def edit_exam_pattern_post(pattern_id):
         return jsonify({'error': 'Unauthorized'}), 401
     try:
         class_level = request.form.get('class')
+        subjects = request.form.get('subjects').split(',') if request.form.get('subjects') else []
+        sub_subject = request.form.get('sub_subject')
         exam_type = request.form.get('exam_type')
         custom_exam_type = request.form.get('custom_exam_type')
-        marking_scheme = request.form.get('marking_scheme')
-        chapters = request.form.getlist('chapters')
-        custom_chapter = request.form.get('custom_chapter')
+        chapters = request.form.get('chapters').split(',') if request.form.get('chapters') else []
         clear_file = request.form.get('clear_file') == 'on'
-        logger.info(f"Attempting to edit exam pattern: ID={pattern_id}, class_level={class_level}, exam_type={exam_type}, chapters={chapters}, clear_file={clear_file}")
-        if not class_level or not exam_type or not marking_scheme:
-            logger.warning("Missing required fields: class_level, exam_type, or marking_scheme")
-            return jsonify({'error': 'Class, exam type, and marking_scheme are required'}), 400
-        if not chapters and not custom_chapter:
+        file = request.files.get('file')
+        logger.info(f"Attempting to edit exam pattern: ID={pattern_id}, class_level={class_level}, subjects={subjects}, sub_subject={sub_subject}, exam_type={exam_type}, chapters={chapters}, clear_file={clear_file}")
+        if not class_level or not subjects or not exam_type:
+            logger.warning("Missing required fields: class_level, subjects, or exam_type")
+            return jsonify({'error': 'Class, subjects, and exam type are required'}), 400
+        if not chapters:
             logger.warning("No chapters selected")
             return jsonify({'error': 'At least one chapter is required'}), 400
         if exam_type == 'other':
@@ -830,31 +943,39 @@ def edit_exam_pattern_post(pattern_id):
             if not exam_type:
                 logger.warning("Custom exam type not provided")
                 return jsonify({'error': 'Custom exam type is required'}), 400
-        if custom_chapter:
-            chapters.append(custom_chapter)
-        chapters_str = ','.join(chapters)
-        filename = None
-        filepath = None
-        old_filepath = None
-        if clear_file:
-            logger.info(f"Clearing existing file for pattern ID={pattern_id}")
-        elif 'file' in request.files:
-            file = request.files['file']
-            if file and file.filename:
-                ext = file.filename.rsplit('.', 1)[-1].lower()
-                if ext not in app.config['ALLOWED_EXTENSIONS']:
-                    logger.warning(f"Unsupported file type: {ext}")
-                    return jsonify({'error': 'Unsupported file type. Allowed: pdf, doc, docx, txt'}), 400
-                if file.content_length > 10 * 1024 * 1024:
-                    logger.warning("File size exceeds 10MB limit")
-                    return jsonify({'error': 'File size exceeds 10MB limit'}), 400
-                filename = f"{uuid.uuid4().hex}_{secure_filename(file.filename)}"
-                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                file.save(filepath)
-                logger.info(f"New file saved: {filepath}")
+        chapter_addresses = []
+        chapter_mongo_ids = []
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT id, filepath FROM exam_patterns WHERE id = %s", (pattern_id,))
+        for full_chapter in chapters:
+            full_chapter = full_chapter.strip()
+            if not full_chapter:
+                continue
+            chap_subject = subjects[0] if subjects else sub_subject or 'unknown'
+            chapter_name = full_chapter
+            if ':' in full_chapter:
+                chap_subject, chapter_name = full_chapter.split(':', 1)
+                chap_subject = chap_subject.strip()
+                chapter_name = chapter_name.strip()
+            collection_name = f"class{class_level}_{chap_subject.lower().replace(' ', '_')}"
+            chapter_addresses.append(collection_name)
+            cursor.execute(
+                """
+                SELECT mongo_id FROM content
+                WHERE class = %s AND subject = %s AND chapter = %s AND mongo_id IS NOT NULL
+                """,
+                (class_level, chap_subject, chapter_name)
+            )
+            result = cursor.fetchone()
+            if result and result['mongo_id']:
+                chapter_mongo_ids.append(result['mongo_id'])
+            else:
+                logger.warning(f"No MongoDB ID found for chapter: class={class_level}, subject={chap_subject}, chapter={chapter_name}")
+        chapter_addresses_str = ','.join(chapter_addresses)
+        chapter_mongo_ids_str = ','.join(chapter_mongo_ids) if chapter_mongo_ids else None
+        subjects_str = ','.join(subjects)
+        chapters_str = ','.join(chapters)
+        cursor.execute("SELECT id, filepath, subjects, sub_subject, filename, mongo_id FROM exam_patterns WHERE id = %s", (pattern_id,))
         pattern = cursor.fetchone()
         if not pattern:
             cursor.close()
@@ -862,36 +983,78 @@ def edit_exam_pattern_post(pattern_id):
             logger.warning(f"Exam pattern not found: ID={pattern_id}")
             return jsonify({'error': 'Exam pattern not found'}), 404
         old_filepath = pattern['filepath']
-        cursor.execute(
-            "SELECT COUNT(*) FROM exam_patterns WHERE name = %s AND class_level = %s AND id != %s",
-            (exam_type, class_level, pattern_id)
-        )
-        if cursor.fetchone()['COUNT(*)'] > 0:
-            cursor.close()
-            conn.close()
-            logger.warning(f"Duplicate exam pattern detected: {exam_type} for class {class_level}")
-            return jsonify({'error': 'Exam pattern already exists for this class'}), 400
+        old_filename = pattern['filename']
+        old_mongo_id = pattern['mongo_id']
+        old_collection_name = f"exam_pattern_combined"
+        filename = old_filename
+        filepath = old_filepath
+        mongo_id = old_mongo_id
+        if clear_file:
+            filename = None
+            filepath = None
+            mongo_id = None
+            logger.info(f"Clearing existing file for pattern ID={pattern_id}")
+        elif file and file.filename:
+            ext = file.filename.rsplit('.', 1)[-1].lower()
+            if ext not in app.config['ALLOWED_EXTENSIONS']:
+                logger.warning(f"Unsupported file type: {ext}")
+                return jsonify({'error': 'Unsupported file type. Allowed: pdf, doc, docx, txt'}), 400
+            if file.content_length > 10 * 1024 * 1024:
+                logger.warning("File size exceeds 10MB limit")
+                return jsonify({'error': 'File size exceeds 10MB limit'}), 400
+            filename = f"{uuid.uuid4().hex}_{secure_filename(file.filename)}"
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(filepath)
+            logger.info(f"New file saved: {filepath}")
+            mongo_result = store_exam_pattern_to_mongo(
+                filepath=filepath,
+                class_level=class_level,
+                subjects=subjects,
+                exam_type=exam_type,
+                chapters=chapters,
+                filename=filename,
+                sub_subject=sub_subject
+            )
+            if not mongo_result['success']:
+                logger.warning(f"Failed to update exam pattern in MongoDB: {mongo_result['error']}")
+            else:
+                logger.info(f"Successfully updated exam pattern in MongoDB: filename={filename}, collection={old_collection_name}")
+                mongo_id = mongo_result['document_id']
         cursor.execute(
             """
             UPDATE exam_patterns
-            SET name = %s, description = %s, class_level = %s, chapters = %s, filename = %s, filepath = %s
+            SET name = %s, class_level = %s, subject = %s, subjects = %s, sub_subject = %s,
+                chapters = %s, chapter_addresses = %s, filename = %s, filepath = %s,
+                mongo_id = %s, chapter_mongo_ids = %s
             WHERE id = %s
             """,
-            (exam_type, marking_scheme, class_level, chapters_str, filename if not clear_file else None, filepath if not clear_file else None, pattern_id)
+            (exam_type, class_level, subjects[0] if subjects else None, subjects_str,
+             sub_subject, chapters_str, chapter_addresses_str, filename, filepath,
+             mongo_id, chapter_mongo_ids_str, pattern_id)
         )
         conn.commit()
         cursor.close()
         conn.close()
-        if old_filepath and (clear_file or filename) and os.path.exists(old_filepath):
+        if old_mongo_id and (clear_file or (file and file.filename)):
+            try:
+                mongo_question_db[old_collection_name].delete_one({'_id': ObjectId(old_mongo_id)})
+                logger.info(f"Deleted old MongoDB document: mongo_id={old_mongo_id}, collection={old_collection_name}")
+            except Exception as e:
+                logger.warning(f"Failed to delete old MongoDB document: mongo_id={old_mongo_id}, collection={old_collection_name}, error={str(e)}")
+        if old_filepath and (clear_file or (file and file.filename)) and os.path.exists(old_filepath):
             try:
                 os.remove(old_filepath)
                 logger.info(f"Deleted old file: {old_filepath}")
             except Exception as e:
                 logger.warning(f"Failed to delete old file {old_filepath}: {str(e)}")
-        logger.info(f"Exam pattern updated: ID={pattern_id}, class_level={class_level}, exam_type={exam_type}")
+        logger.info(f"Exam pattern updated: ID={pattern_id}, class_level={class_level}, subjects={subjects_str}, exam_type={exam_type}")
         return jsonify({'message': 'Exam pattern updated successfully', 'pattern_id': pattern_id})
     except Exception as e:
         logger.exception('Error editing exam pattern')
+        if 'cursor' in locals():
+            cursor.close()
+        if 'conn' in locals():
+            conn.close()
         return jsonify({'error': str(e)}), 500
 
 @app.route('/delete_exam_pattern/<pattern_id>', methods=['POST'])
@@ -902,7 +1065,7 @@ def delete_exam_pattern(pattern_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT id, filepath FROM exam_patterns WHERE id = %s", (pattern_id,))
+        cursor.execute("SELECT id, filepath, subjects, sub_subject, filename, mongo_id FROM exam_patterns WHERE id = %s", (pattern_id,))
         pattern = cursor.fetchone()
         if not pattern:
             cursor.close()
@@ -913,6 +1076,13 @@ def delete_exam_pattern(pattern_id):
         conn.commit()
         cursor.close()
         conn.close()
+        collection_name = f"exam_pattern_combined"
+        if pattern['mongo_id']:
+            try:
+                mongo_question_db[collection_name].delete_one({'_id': ObjectId(pattern['mongo_id'])})
+                logger.info(f"Deleted exam pattern from MongoDB: mongo_id={pattern['mongo_id']}, collection={collection_name}")
+            except Exception as e:
+                logger.warning(f"Failed to delete from MongoDB: mongo_id={pattern['mongo_id']}, error={str(e)}")
         if pattern['filepath'] and os.path.exists(pattern['filepath']):
             try:
                 os.remove(pattern['filepath'])
@@ -923,53 +1093,50 @@ def delete_exam_pattern(pattern_id):
         return jsonify({'message': 'Exam pattern deleted successfully'})
     except Exception as e:
         logger.exception(f"Error deleting exam pattern: ID={pattern_id}")
+        if 'cursor' in locals():
+            cursor.close()
+        if 'conn' in locals():
+            conn.close()
         return jsonify({'error': str(e)}), 500
 
 @app.route('/generate_question_paper', methods=['GET', 'POST'])
-def generate_question_paper():
+def generate_question_paper_route():
     if 'admin' not in session:
         logger.warning("Unauthorized access to generate_question_paper")
-        return redirect(url_for('admin_login'))
-    if request.method == 'POST':
-        try:
-            class_level = request.form.get('class_level')
-            subject = request.form.get('subject')
-            exam_pattern_id = request.form.get('exam_pattern_id')
-            difficulty = request.form.get('difficulty', 'easy')
-            file = request.files.get('file')
-            logger.info(f"Attempting to generate question paper: class_level={class_level}, subject={subject}, exam_pattern_id={exam_pattern_id}, difficulty={difficulty}")
-            result = generate_question_paper(
-                class_level=class_level,
-                subject=subject,
-                exam_pattern_id=exam_pattern_id,
-                difficulty=difficulty,
-                file=file,
-                upload_folder=app.config['UPLOAD_FOLDER'],
-                output_folder=app.config['OUTPUT_FOLDER']
-            )
-            if result.get('success'):
-                output_filepath = result.get('filepath')
-                output_filename = os.path.basename(output_filepath)
-                text = extract_text_from_file(output_filepath)
-                metadata = {
-                    "class": class_level,
-                    "subject": subject,
-                    "book": "Question Paper",
-                    "chapter_type": "Question Paper",
-                    "filename": output_filename
-                }
-                collection_name = f"class{class_level}_{subject.lower().replace(' ', '_')}"
-                if store_to_mongo(metadata, text, None, collection_name=collection_name):
-                    logger.info(f"Successfully stored question paper in MongoDB: filename={output_filename}, collection={collection_name}")
-                else:
-                    logger.warning(f"Failed to store question paper in MongoDB: filename={output_filename}, collection={collection_name}")
-                return jsonify(result)
-        except Exception as e:
-            logger.exception('Error generating question paper')
-            return jsonify({'error': str(e)}), 500
-    return render_template('generate_question_paper.html')
+        return render_template('admin_login.html') if request.method == 'GET' else jsonify({'error': 'Unauthorized'}), 401
+    if request.method == 'GET':
+        logger.info("GET request to /generate_question_paper; rendering form")
+        return render_template('generate_questions.html')
+    try:
+        pattern_id = request.form.get('pattern_id')
+        class_level = request.form.get('class')
+        subject = request.form.get('subject')
+        difficulty = request.form.get('difficulty')
+        chapters = request.form.get('chapters')
+        logger.info(f"Generating question paper: pattern_id={pattern_id}, class_level={class_level}, subject={subject}, difficulty={difficulty}, chapters={chapters}")
+        if not pattern_id or not class_level or not subject or not difficulty or not chapters:
+            logger.warning("Missing required fields: pattern_id, class, subject, difficulty, or chapters")
+            return jsonify({'error': 'Pattern ID, class, subject, difficulty, and at least one chapter are required'}), 400
+        result = generate_question_paper(
+            pattern_id=pattern_id,
+            class_level=class_level,
+            subject=subject,
+            mysql_config=mysql_config,
+            upload_folder=app.config['UPLOAD_FOLDER'],
+            output_folder=app.config['OUTPUT_FOLDER'],
+            difficulty=difficulty,
+            selected_chapters=chapters.split(',') if chapters else []
+        )
+        if 'error' in result:
+            logger.warning(f"Failed to generate question paper: {result['error']}")
+            return jsonify({'error': result['error']}), 400 if 'not found' in result['error'].lower() else 500
+        logger.info(f"Question paper generated successfully: pattern_id={pattern_id}")
+        return jsonify(result)
+    except Exception as e:
+        logger.exception(f"Error in generate_question_paper route: pattern_id={pattern_id}")
+        return jsonify({'error': str(e)}), 500
 
-@app.route('/static/outputs/<path:filename>')
+@app.route('/static/outputs/<filename>')
 def download_file(filename):
     try:
         logger.info(f"Serving file: {filename}")
@@ -1087,24 +1254,6 @@ def delete_subject(subject_id):
         logger.exception('Error deleting subject')
         return jsonify({'error': str(e)}), 500
 
-@app.route('/get_chapters/<class_level>')
-def get_chapters(class_level):
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT DISTINCT chapter FROM content WHERE class = %s", (class_level,))
-        content_chapters = [row[0] for row in cursor.fetchall()]
-        cursor.execute("SELECT DISTINCT name FROM chapters WHERE class = %s", (class_level,))
-        custom_chapters = [row[0] for row in cursor.fetchall()]
-        cursor.close()
-        conn.close()
-        chapters = list(set(content_chapters + custom_chapters))
-        logger.info(f"Retrieved chapters for class {class_level}: {chapters}")
-        return jsonify(chapters)
-    except Exception as e:
-        logger.exception(f"Error retrieving chapters for class {class_level}")
-        return jsonify({'error': str(e)}), 500
-
 @app.route('/get_exam_types')
 def get_exam_types():
     try:
@@ -1202,7 +1351,7 @@ def get_analytics():
         logger.info(f"Retrieved analytics: total_classes={total_classes}, total_staff={total_staff}, class_level={class_level or 'all'}")
         return jsonify(analytics)
     except Exception as e:
-        logger.error(f"Error retrieving analytics for class_level={class_level or 'all'}: {str(e)}")
+        logger.exception(f"Error retrieving analytics for class_level={class_level or 'all'}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/view_staff', methods=['GET'])

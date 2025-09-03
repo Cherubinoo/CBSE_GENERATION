@@ -1,0 +1,314 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="card shadow-sm border-0 animate__animated animate__fadeIn">
+        <div class="card-header bg-primary text-white d-flex align-items-center justify-content-between">
+            <h2 class="mb-0"><i class="fas fa-question-circle me-2"></i>Generate Question Paper</h2>
+        </div>
+        <div class="card-body p-4">
+            <form id="generateQuestionsForm">
+                <div class="row mb-4">
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label fw-bold">Class</label>
+                        <select class="form-select" name="class" id="classSelect" required>
+                            <option value="">Select Class</option>
+                            {% for i in range(1,13) %}
+                            <option value="{{ i }}">Class {{ i }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label fw-bold">Subject</label>
+                        <select class="form-select" name="subject" id="subjectSelect" required>
+                            <option value="">Select Subject</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label fw-bold">Select Exam Pattern</label>
+                        <select class="form-select" name="pattern_id" id="patternSelect" required>
+                            <option value="">Select Exam Pattern</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label fw-bold">Difficulty</label>
+                        <select class="form-select" name="difficulty" id="difficultySelect" required>
+                            <option value="">Select Difficulty</option>
+                            <option value="easy">Easy (Direct from Book)</option>
+                            <option value="medium">Medium (Partially Applicable)</option>
+                            <option value="hard">Hard (Fully Applicable)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="form-label fw-bold">Exam Pattern Details</label>
+                    <div id="patternDetails" class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>Select an exam pattern to view details
+                    </div>
+                </div>
+
+                <div class="mb-4" id="chaptersSection" style="display: none;">
+                    <label class="form-label fw-bold">Select Chapters</label>
+                    <div id="chaptersList" class="border p-3 rounded bg-light" style="max-height: 200px; overflow-y: auto;">
+                        <!-- Chapters will be dynamically populated here -->
+                    </div>
+                </div>
+
+                <div class="text-center">
+                    <button type="submit" class="btn btn-primary btn-lg px-5 py-3" id="submitButton">
+                        <span id="submitButtonText"><i class="fas fa-play me-2"></i>Generate Questions</span>
+                        <span id="submitButtonSpinner" class="spinner-border spinner-border-sm d-none" role="status"></span>
+                    </button>
+                </div>
+            </form>
+
+            <div id="resultMessage" class="mt-4 text-center"></div>
+            <div id="generatedQuestions" class="mt-4"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+    .animate__fadeIn { animation: fadeIn 0.5s; }
+    .spinner-border-sm { margin-left: 8px; }
+    #generatedQuestions { white-space: pre-wrap; font-family: monospace; background: #f8f9fa; padding: 15px; border-radius: 5px; }
+    #chaptersList label { margin-right: 15px; }
+</style>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const generateQuestionsForm = document.getElementById('generateQuestionsForm');
+        const classSelect = document.getElementById('classSelect');
+        const subjectSelect = document.getElementById('subjectSelect');
+        const patternSelect = document.getElementById('patternSelect');
+        const difficultySelect = document.getElementById('difficultySelect');
+        const patternDetails = document.getElementById('patternDetails');
+        const chaptersSection = document.getElementById('chaptersSection');
+        const chaptersList = document.getElementById('chaptersList');
+        const submitButton = document.getElementById('submitButton');
+        const submitButtonText = document.getElementById('submitButtonText');
+        const submitButtonSpinner = document.getElementById('submitButtonSpinner');
+        const resultMessage = document.getElementById('resultMessage');
+        const generatedQuestions = document.getElementById('generatedQuestions');
+
+        function showFeedback(message, type = 'success') {
+            resultMessage.innerHTML = `
+                <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>`;
+            setTimeout(() => resultMessage.innerHTML = '', 5000);
+        }
+
+        async function loadSubjects(classLevel) {
+            subjectSelect.innerHTML = '<option value="">Select Subject</option>';
+            patternSelect.innerHTML = '<option value="">Select Exam Pattern</option>';
+            difficultySelect.value = '';
+            chaptersSection.style.display = 'none';
+            chaptersList.innerHTML = '';
+            patternDetails.innerHTML = '<i class="fas fa-info-circle me-2"></i>Select an exam pattern to view details';
+            generatedQuestions.innerHTML = '';
+            if (!classLevel) return;
+            try {
+                const response = await fetch(`/get_subjects/${classLevel}`);
+                if (!response.ok) throw new Error(`Failed to load subjects (Status: ${response.status})`);
+                const subjects = await response.json();
+                if (subjects.error) throw new Error(subjects.error);
+                if (subjects.length > 0) {
+                    subjects.forEach(subject => {
+                        const option = document.createElement('option');
+                        option.value = subject;
+                        option.textContent = subject;
+                        subjectSelect.appendChild(option);
+                    });
+                } else {
+                    subjectSelect.innerHTML += '<option value="">No subjects found</option>';
+                }
+            } catch (error) {
+                console.error('Error loading subjects:', error);
+                showFeedback(`Failed to load subjects: ${error.message}`, 'danger');
+            }
+        }
+
+        async function loadExamPatterns(classLevel, subject) {
+            patternSelect.innerHTML = '<option value="">Select Exam Pattern</option>';
+            difficultySelect.value = '';
+            chaptersSection.style.display = 'none';
+            chaptersList.innerHTML = '';
+            patternDetails.innerHTML = '<i class="fas fa-info-circle me-2"></i>Select an exam pattern to view details';
+            generatedQuestions.innerHTML = '';
+            if (!classLevel || !subject) return;
+            try {
+                const response = await fetch(`/get_exam_patterns/${classLevel}/${encodeURIComponent(subject)}`);
+                if (!response.ok) throw new Error(`Failed to load exam patterns (Status: ${response.status})`);
+                const patterns = await response.json();
+                if (patterns.error) throw new Error(patterns.error);
+                if (patterns.length > 0) {
+                    patterns.forEach(pattern => {
+                        const option = document.createElement('option');
+                        option.value = pattern.id;
+                        option.textContent = `${pattern.name} (Class ${pattern.class_level}${pattern.sub_subject ? ', ' + pattern.sub_subject : ''})`;
+                        patternSelect.appendChild(option);
+                    });
+                } else {
+                    patternSelect.innerHTML += '<option value="">No exam patterns found</option>';
+                }
+            } catch (error) {
+                console.error('Error loading exam patterns:', error);
+                showFeedback(`Failed to load exam patterns: ${error.message}`, 'danger');
+            }
+        }
+
+        async function loadChapters(patternId) {
+            chaptersSection.style.display = 'none';
+            chaptersList.innerHTML = '';
+            if (!patternId) {
+                patternDetails.innerHTML = '<i class="fas fa-info-circle me-2"></i>Select an exam pattern to view details';
+                return;
+            }
+            try {
+                const response = await fetch(`/edit_exam_pattern/${patternId}`);
+                if (!response.ok) throw new Error(`Failed to load pattern details (Status: ${response.status})`);
+                const pattern = await response.json();
+                if (pattern.error) throw new Error(pattern.error);
+
+                patternDetails.innerHTML = `
+                    <strong>Exam Type:</strong> ${pattern.name}<br>
+                    <strong>Class:</strong> ${pattern.class_level}<br>
+                    <strong>Subject(s):</strong> ${pattern.subjects.join(', ')}<br>
+                    ${pattern.sub_subject ? `<strong>Sub-Subject:</strong> ${pattern.sub_subject}<br>` : ''}
+                    <strong>Chapters:</strong> ${pattern.chapters.join(', ')}<br>
+                    ${pattern.filename ? `<strong>File:</strong> ${pattern.filename}` : 'No file uploaded'}
+                `;
+                patternDetails.className = 'alert alert-info';
+
+                const classLevel = pattern.class_level;
+                const subjects = pattern.subjects;
+                const subSubject = pattern.sub_subject || null;
+                let allChapters = [];
+                for (const subject of subjects) {
+                    let url = `/get_chapters/${classLevel}/${encodeURIComponent(subject)}`;
+                    if (subSubject && subject === pattern.subject) {
+                        url += `/${encodeURIComponent(subSubject)}`;
+                    }
+                    const response = await fetch(url);
+                    if (!response.ok) throw new Error(`Failed to load chapters for ${subject}`);
+                    const chapters = await response.json();
+                    if (chapters.error) throw new Error(chapters.error);
+                    allChapters = allChapters.concat(chapters.map(ch => ({ subject, chapter: ch })));
+                }
+
+                if (allChapters.length > 0) {
+                    chaptersList.innerHTML = allChapters.map(ch => `
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="chapters" value="${ch.subject}:${ch.chapter}"
+                                id="chapter_${ch.subject}_${ch.chapter.replace(/\s+/g, '_')}"
+                                ${pattern.chapters.includes(`${ch.subject}:${ch.chapter}`) || pattern.chapters.includes(ch.chapter) ? 'checked' : ''}>
+                            <label class="form-check-label" for="chapter_${ch.subject}_${ch.chapter.replace(/\s+/g, '_')}">
+                                ${ch.subject}: ${ch.chapter}
+                            </label>
+                        </div>
+                    `).join('');
+                    chaptersSection.style.display = 'block';
+                } else {
+                    chaptersList.innerHTML = '<p>No chapters available for the selected subject(s).</p>';
+                    chaptersSection.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Error loading pattern details or chapters:', error);
+                patternDetails.innerHTML = `Failed to load pattern details: ${error.message}`;
+                patternDetails.className = 'alert alert-danger';
+                chaptersSection.style.display = 'none';
+            }
+        }
+
+        classSelect.addEventListener('change', () => {
+            subjectSelect.value = '';
+            patternSelect.value = '';
+            difficultySelect.value = '';
+            chaptersSection.style.display = 'none';
+            chaptersList.innerHTML = '';
+            loadSubjects(classSelect.value);
+        });
+
+        subjectSelect.addEventListener('change', () => {
+            patternSelect.value = '';
+            difficultySelect.value = '';
+            chaptersSection.style.display = 'none';
+            chaptersList.innerHTML = '';
+            loadExamPatterns(classSelect.value, subjectSelect.value);
+        });
+
+        patternSelect.addEventListener('change', () => {
+            difficultySelect.value = '';
+            generatedQuestions.innerHTML = '';
+            loadChapters(patternSelect.value);
+        });
+
+        generateQuestionsForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            submitButtonText.classList.add('d-none');
+            submitButtonSpinner.classList.remove('d-none');
+            submitButton.disabled = true;
+            resultMessage.innerHTML = `
+                <div class="text-center py-2">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Processing...</span>
+                    </div>
+                    <p class="mt-2">Generating questions...</p>
+                </div>`;
+            generatedQuestions.innerHTML = '';
+
+            const formData = new FormData(generateQuestionsForm);
+            const patternId = formData.get('pattern_id');
+            const difficulty = formData.get('difficulty');
+            const chapters = Array.from(document.querySelectorAll('input[name="chapters"]:checked')).map(input => input.value);
+            formData.append('chapters', chapters.join(','));
+
+            if (!patternId || !difficulty || chapters.length === 0) {
+                showFeedback('Please select an exam pattern, difficulty, and at least one chapter', 'danger');
+                submitButtonText.classList.remove('d-none');
+                submitButtonSpinner.classList.add('d-none');
+                submitButton.disabled = false;
+                return;
+            }
+
+            try {
+                const response = await fetch('/generate_question_paper', {
+                    method: 'POST',
+                    body: formData
+                });
+                if (!response.ok) throw new Error(`Server error: Status ${response.status}`);
+                const data = await response.json();
+                if (data.error) {
+                    showFeedback(data.error, 'danger');
+                    generatedQuestions.innerHTML = '';
+                } else {
+                    showFeedback(data.message, 'success');
+                    generatedQuestions.innerHTML = `<pre>${data.questions}</pre>`;
+                    if (data.docx_filename && data.pdf_filename) {
+                        const downloadDiv = document.createElement('div');
+                        downloadDiv.className = 'mt-3 text-center';
+                        downloadDiv.innerHTML = `
+                            <a href="/static/outputs/${data.docx_filename}" class="btn btn-success me-2" download>Download DOCX</a>
+                            <a href="/static/outputs/${data.pdf_filename}" class="btn btn-success" download>Download PDF</a>
+                        `;
+                        generatedQuestions.after(downloadDiv);
+                    }
+                }
+            } catch (error) {
+                console.error('Error generating questions:', error);
+                showFeedback(`Failed to generate questions: ${error.message}`, 'danger');
+                generatedQuestions.innerHTML = '';
+            } finally {
+                submitButtonText.classList.remove('d-none');
+                submitButtonSpinner.classList.add('d-none');
+                submitButton.disabled = false;
+                resultMessage.innerHTML = '';
+            }
+        });
+    });
+</script>
+{% endblock %}
